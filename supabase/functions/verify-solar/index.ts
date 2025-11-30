@@ -12,60 +12,95 @@ serve(async (req) => {
   }
 
   try {
-    const { lat, lon, sample_id } = await req.json();
+    const { lat, lon, sample_id, imageData } = await req.json();
     
-    console.log(`Processing verification request for coordinates: ${lat}, ${lon}`);
-
-    // Validate coordinates
-    if (!lat || !lon || isNaN(lat) || isNaN(lon)) {
-      return new Response(
-        JSON.stringify({ error: 'Invalid coordinates provided' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // Fetch Mapbox token
-    const MAPBOX_API_KEY = Deno.env.get('MAPBOX_API_KEY');
-    if (!MAPBOX_API_KEY) {
-      console.error('MAPBOX_API_KEY not configured');
-      return new Response(
-        JSON.stringify({ error: 'Map service not configured' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // Construct Mapbox Static Images API URL for satellite imagery
-    // Using zoom level 19 for high-resolution rooftop details
+    let base64Image: string;
+    let imageSource: string;
+    let actualLat: number;
+    let actualLon: number;
     const zoom = 19;
     const width = 1280;
     const height = 1280;
-    const imageUrl = `https://api.mapbox.com/styles/v1/mapbox/satellite-v9/static/${lon},${lat},${zoom},0/${width}x${height}@2x?access_token=${MAPBOX_API_KEY}`;
-    
-    console.log('Fetching satellite imagery from Mapbox...');
 
-    // Fetch the satellite image
-    const imageResponse = await fetch(imageUrl);
-    if (!imageResponse.ok) {
-      console.error('Failed to fetch satellite imagery:', imageResponse.status);
-      return new Response(
-        JSON.stringify({ error: 'Failed to fetch satellite imagery' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
+    // Check if direct image upload or coordinate-based fetch
+    if (imageData) {
+      console.log('Processing direct image upload...');
+      
+      // Validate that coordinates are provided with the image
+      if (!lat || !lon || isNaN(lat) || isNaN(lon)) {
+        return new Response(
+          JSON.stringify({ error: 'Coordinates must be provided with uploaded image' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
 
-    const imageBuffer = await imageResponse.arrayBuffer();
-    
-    // Convert buffer to base64 in chunks to avoid stack overflow
-    const bytes = new Uint8Array(imageBuffer);
-    const chunkSize = 8192;
-    let binary = '';
-    for (let i = 0; i < bytes.length; i += chunkSize) {
-      const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
-      binary += String.fromCharCode.apply(null, Array.from(chunk));
+      actualLat = lat;
+      actualLon = lon;
+      
+      // Extract base64 data (remove data URL prefix if present)
+      if (imageData.startsWith('data:')) {
+        base64Image = imageData.split(',')[1];
+      } else {
+        base64Image = imageData;
+      }
+      
+      imageSource = 'User Upload';
+      console.log('Direct image received, sending to AI for analysis...');
+      
+    } else {
+      console.log(`Processing verification request for coordinates: ${lat}, ${lon}`);
+
+      // Validate coordinates
+      if (!lat || !lon || isNaN(lat) || isNaN(lon)) {
+        return new Response(
+          JSON.stringify({ error: 'Invalid coordinates provided' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      actualLat = lat;
+      actualLon = lon;
+
+      // Fetch Mapbox token
+      const MAPBOX_API_KEY = Deno.env.get('MAPBOX_API_KEY');
+      if (!MAPBOX_API_KEY) {
+        console.error('MAPBOX_API_KEY not configured');
+        return new Response(
+          JSON.stringify({ error: 'Map service not configured' }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Construct Mapbox Static Images API URL for satellite imagery
+      const imageUrl = `https://api.mapbox.com/styles/v1/mapbox/satellite-v9/static/${lon},${lat},${zoom},0/${width}x${height}@2x?access_token=${MAPBOX_API_KEY}`;
+      
+      console.log('Fetching satellite imagery from Mapbox...');
+
+      // Fetch the satellite image
+      const imageResponse = await fetch(imageUrl);
+      if (!imageResponse.ok) {
+        console.error('Failed to fetch satellite imagery:', imageResponse.status);
+        return new Response(
+          JSON.stringify({ error: 'Failed to fetch satellite imagery' }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const imageBuffer = await imageResponse.arrayBuffer();
+      
+      // Convert buffer to base64 in chunks to avoid stack overflow
+      const bytes = new Uint8Array(imageBuffer);
+      const chunkSize = 8192;
+      let binary = '';
+      for (let i = 0; i < bytes.length; i += chunkSize) {
+        const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
+        binary += String.fromCharCode.apply(null, Array.from(chunk));
+      }
+      base64Image = btoa(binary);
+      
+      imageSource = 'Mapbox Satellite';
+      console.log('Satellite imagery fetched successfully, sending to AI for analysis...');
     }
-    const base64Image = btoa(binary);
-    
-    console.log('Satellite imagery fetched successfully, sending to AI for analysis...');
 
     // Call Lovable AI for solar panel detection
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
@@ -111,7 +146,7 @@ QUALITY CONTROL:
 
 Be precise, conservative, and evidence-based. Do NOT hallucinate detections.`;
 
-    const userPrompt = `Analyze this satellite imagery at coordinates ${lat.toFixed(6)}, ${lon.toFixed(6)} in India. 
+    const userPrompt = `Analyze this satellite imagery at coordinates ${actualLat.toFixed(6)}, ${actualLon.toFixed(6)} in India. 
 
 Determine if rooftop solar panels are present and provide detailed verification data. Consider:
 - Panel geometry and arrangement patterns
@@ -254,7 +289,7 @@ Provide your assessment with evidence-based reasoning.`;
     const verificationData = JSON.parse(toolCall.function.arguments);
 
     // Convert normalized bounding boxes to geographic coordinates
-    const metersPerPixel = 156543.03392 * Math.cos(lat * Math.PI / 180) / Math.pow(2, zoom);
+    const metersPerPixel = 156543.03392 * Math.cos(actualLat * Math.PI / 180) / Math.pow(2, zoom);
     const imageWidthMeters = width * metersPerPixel;
     const imageHeightMeters = height * metersPerPixel;
     
@@ -267,16 +302,16 @@ Provide your assessment with evidence-based reasoning.`;
       
       // Convert meters to lat/lon offset
       const latPerMeter = 1 / 111320;
-      const lonPerMeter = 1 / (111320 * Math.cos(lat * Math.PI / 180));
+      const lonPerMeter = 1 / (111320 * Math.cos(actualLat * Math.PI / 180));
       
       return {
         type: 'Polygon',
         coordinates: [[
-          [lon + xMinMeters * lonPerMeter, lat + yMaxMeters * latPerMeter], // Top-left
-          [lon + xMaxMeters * lonPerMeter, lat + yMaxMeters * latPerMeter], // Top-right
-          [lon + xMaxMeters * lonPerMeter, lat + yMinMeters * latPerMeter], // Bottom-right
-          [lon + xMinMeters * lonPerMeter, lat + yMinMeters * latPerMeter], // Bottom-left
-          [lon + xMinMeters * lonPerMeter, lat + yMaxMeters * latPerMeter], // Close polygon
+          [actualLon + xMinMeters * lonPerMeter, actualLat + yMaxMeters * latPerMeter], // Top-left
+          [actualLon + xMaxMeters * lonPerMeter, actualLat + yMaxMeters * latPerMeter], // Top-right
+          [actualLon + xMaxMeters * lonPerMeter, actualLat + yMinMeters * latPerMeter], // Bottom-right
+          [actualLon + xMinMeters * lonPerMeter, actualLat + yMinMeters * latPerMeter], // Bottom-left
+          [actualLon + xMinMeters * lonPerMeter, actualLat + yMaxMeters * latPerMeter], // Close polygon
         ]],
         confidence: box.confidence
       };
@@ -285,8 +320,8 @@ Provide your assessment with evidence-based reasoning.`;
     // Construct final result
     const result = {
       sample_id: sample_id || Math.floor(Math.random() * 100000),
-      lat,
-      lon,
+      lat: actualLat,
+      lon: actualLon,
       has_solar: verificationData.has_solar,
       confidence: verificationData.confidence,
       panel_count_est: verificationData.panel_count_est,
@@ -296,7 +331,7 @@ Provide your assessment with evidence-based reasoning.`;
       qc_notes: verificationData.qc_notes,
       detection_polygons: detectionPolygons,
       image_metadata: {
-        source: 'Mapbox Satellite',
+        source: imageSource,
         zoom: zoom,
         resolution: 'High',
         timestamp: new Date().toISOString()
