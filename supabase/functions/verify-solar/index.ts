@@ -54,7 +54,16 @@ serve(async (req) => {
     }
 
     const imageBuffer = await imageResponse.arrayBuffer();
-    const base64Image = btoa(String.fromCharCode(...new Uint8Array(imageBuffer)));
+    
+    // Convert buffer to base64 in chunks to avoid stack overflow
+    const bytes = new Uint8Array(imageBuffer);
+    const chunkSize = 8192;
+    let binary = '';
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
+      binary += String.fromCharCode.apply(null, Array.from(chunk));
+    }
+    const base64Image = btoa(binary);
     
     console.log('Satellite imagery fetched successfully, sending to AI for analysis...');
 
