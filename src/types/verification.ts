@@ -10,6 +10,11 @@ export interface VerificationResult {
   qc_status: "VERIFIABLE" | "NOT_VERIFIABLE";
   qc_notes: string[];
   bbox_or_mask?: string;
+  detection_polygons?: Array<{
+    type: 'Polygon';
+    coordinates: number[][][];
+    confidence: number;
+  }>;
   image_metadata: {
     source: string;
     zoom: number;

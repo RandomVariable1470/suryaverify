@@ -140,7 +140,7 @@ const Index = () => {
       <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
         {/* Left Panel - Map View (65-70% width) */}
         <div className="lg:w-[68%] h-[50vh] lg:h-full relative border-b lg:border-b-0 lg:border-r border-border/50">
-          <MapView coordinates={coordinates} />
+          <MapView coordinates={coordinates} detectionPolygons={result?.detection_polygons} />
           <div className="absolute top-6 left-6 right-6 z-10 max-w-md">
             <CoordinateInput onVerify={handleVerify} isLoading={isVerifying} />
           </div>
