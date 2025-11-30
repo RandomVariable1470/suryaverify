@@ -5,6 +5,7 @@ import { Button } from "./ui/button";
 import { VerificationResult } from "@/types/verification";
 import { CheckCircle2, XCircle, AlertCircle, Download, Eye, Loader2, ChevronDown, ChevronUp, Info } from "lucide-react";
 import { Separator } from "./ui/separator";
+import { toast } from "sonner";
 import {
   Collapsible,
   CollapsibleContent,
@@ -243,26 +244,88 @@ const ResultsPanel = ({ result, isLoading }: ResultsPanelProps) => {
         </Collapsible>
 
         {/* Actions */}
-        <div className="flex gap-3 animate-fade-in" style={{ animationDelay: '500ms' }}>
-          <Button 
-            variant="default" 
-            className="w-full gap-2 shadow-md hover:shadow-lg active:scale-[0.98] transition-all"
-            onClick={() => {
-              const dataStr = JSON.stringify(result, null, 2);
-              const blob = new Blob([dataStr], { type: 'application/json' });
-              const url = URL.createObjectURL(blob);
-              const link = document.createElement('a');
-              link.href = url;
-              link.download = `verification_${result.sample_id}.json`;
-              document.body.appendChild(link);
-              link.click();
-              document.body.removeChild(link);
-              URL.revokeObjectURL(url);
-            }}
-          >
-            <Download className="w-4 h-4" />
-            Download JSON
-          </Button>
+        <div className="flex flex-col gap-3 animate-fade-in" style={{ animationDelay: '500ms' }}>
+          <div className="flex gap-3">
+            <Button 
+              variant="default" 
+              className="flex-1 gap-2 shadow-md hover:shadow-lg active:scale-[0.98] transition-all"
+              onClick={() => {
+                const dataStr = JSON.stringify(result, null, 2);
+                const blob = new Blob([dataStr], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `verification_${result.sample_id}.json`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+              }}
+            >
+              <Download className="w-4 h-4" />
+              Download JSON
+            </Button>
+          </div>
+          
+          {result.detection_polygons && result.detection_polygons.length > 0 && (
+            <Button 
+              variant="outline" 
+              className="w-full gap-2 border-accent/50 hover:bg-accent/10 hover:border-accent transition-all"
+              onClick={() => {
+                // Create GeoJSON FeatureCollection
+                const geojson = {
+                  type: "FeatureCollection",
+                  metadata: {
+                    sample_id: result.sample_id,
+                    center_lat: result.lat,
+                    center_lon: result.lon,
+                    verification_date: new Date().toISOString(),
+                    has_solar: result.has_solar,
+                    overall_confidence: result.confidence,
+                    panel_count: result.panel_count_est,
+                    pv_area_sqm: result.pv_area_sqm_est,
+                    capacity_kw: result.capacity_kw_est,
+                    qc_status: result.qc_status,
+                    source: "SuryaVerify - PM Surya Ghar Verification System",
+                    imagery_source: result.image_metadata.source,
+                    imagery_zoom: result.image_metadata.zoom
+                  },
+                  features: result.detection_polygons.map((polygon, idx) => ({
+                    type: "Feature",
+                    id: `detection_${result.sample_id}_${idx + 1}`,
+                    geometry: {
+                      type: polygon.type,
+                      coordinates: polygon.coordinates
+                    },
+                    properties: {
+                      zone_id: idx + 1,
+                      confidence: polygon.confidence,
+                      confidence_percent: `${(polygon.confidence * 100).toFixed(1)}%`,
+                      detection_method: "AI-powered satellite imagery analysis",
+                      model: "Lovable AI - Google Gemini 2.5 Pro",
+                      verification_status: result.qc_status
+                    }
+                  }))
+                };
+
+                const geojsonStr = JSON.stringify(geojson, null, 2);
+                const blob = new Blob([geojsonStr], { type: 'application/geo+json' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `solar_detection_${result.sample_id}_${result.lat.toFixed(6)}_${result.lon.toFixed(6)}.geojson`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+                
+                toast.success("GeoJSON exported successfully!");
+              }}
+            >
+              <Download className="w-4 h-4" />
+              Export GeoJSON for GIS
+            </Button>
+          )}
         </div>
 
         {/* Attribution & Legal Notice */}

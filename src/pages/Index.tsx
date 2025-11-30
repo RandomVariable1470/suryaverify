@@ -116,17 +116,97 @@ const Index = () => {
       return;
     }
 
-    const dataStr = JSON.stringify(allResults, null, 2);
-    const blob = new Blob([dataStr], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `verification_results_${new Date().toISOString().split('T')[0]}.json`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-    toast.success("Results exported successfully");
+    // Check if we should export GeoJSON or regular JSON
+    const hasDetectionPolygons = allResults.some(r => r.detection_polygons && r.detection_polygons.length > 0);
+    
+    if (hasDetectionPolygons) {
+      // Export as GeoJSON FeatureCollection
+      const features: any[] = [];
+      
+      allResults.forEach((result) => {
+        if (!result.detection_polygons || result.detection_polygons.length === 0) {
+          // Include location point even if no detections
+          features.push({
+            type: "Feature",
+            id: `verification_${result.sample_id}`,
+            geometry: {
+              type: "Point",
+              coordinates: [result.lon, result.lat]
+            },
+            properties: {
+              sample_id: result.sample_id,
+              has_solar: result.has_solar,
+              confidence: result.confidence,
+              qc_status: result.qc_status,
+              verification_type: "no_detection"
+            }
+          });
+        } else {
+          result.detection_polygons.forEach((polygon, idx) => {
+            features.push({
+              type: "Feature",
+              id: `detection_${result.sample_id}_${idx + 1}`,
+              geometry: {
+                type: polygon.type,
+                coordinates: polygon.coordinates
+              },
+              properties: {
+                sample_id: result.sample_id,
+                zone_id: idx + 1,
+                center_lat: result.lat,
+                center_lon: result.lon,
+                has_solar: result.has_solar,
+                overall_confidence: result.confidence,
+                zone_confidence: polygon.confidence,
+                panel_count: result.panel_count_est,
+                pv_area_sqm: result.pv_area_sqm_est,
+                capacity_kw: result.capacity_kw_est,
+                qc_status: result.qc_status,
+                verification_type: "solar_detection",
+                detection_method: "AI-powered satellite imagery analysis"
+              }
+            });
+          });
+        }
+      });
+
+      const geojson = {
+        type: "FeatureCollection",
+        metadata: {
+          export_date: new Date().toISOString(),
+          total_verifications: allResults.length,
+          total_detections: allResults.filter(r => r.has_solar).length,
+          source: "SuryaVerify - PM Surya Ghar Verification System",
+          export_format: "GeoJSON"
+        },
+        features
+      };
+
+      const geojsonStr = JSON.stringify(geojson, null, 2);
+      const blob = new Blob([geojsonStr], { type: 'application/geo+json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `verification_results_${new Date().toISOString().split('T')[0]}.geojson`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      toast.success(`Exported ${allResults.length} results as GeoJSON`);
+    } else {
+      // Export as regular JSON if no polygons
+      const dataStr = JSON.stringify(allResults, null, 2);
+      const blob = new Blob([dataStr], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `verification_results_${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      toast.success("Results exported successfully");
+    }
   };
 
   return (
