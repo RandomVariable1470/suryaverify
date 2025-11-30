@@ -209,6 +209,9 @@ const Index = () => {
     }
   };
 
+  // Two-screen mode: show input OR results
+  const showResults = coordinates !== null;
+
   return (
     <div className="flex flex-col h-screen bg-background">
       <Header 
@@ -217,20 +220,25 @@ const Index = () => {
         hasResults={allResults.length > 0}
       />
       
-      <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
-        {/* Left Panel - Map View (65-70% width) */}
-        <div className="lg:w-[68%] h-[50vh] lg:h-full relative border-b lg:border-b-0 lg:border-r border-border/50">
-          <MapView coordinates={coordinates} detectionPolygons={result?.detection_polygons} />
-          <div className="absolute top-6 left-6 right-6 z-10 max-w-md">
-            <CoordinateInput onVerify={handleVerify} isLoading={isVerifying} />
+      {!showResults ? (
+        /* Screen 1: Coordinate Input (No Map) */
+        <div className="flex-1 flex items-center justify-center p-6">
+          <CoordinateInput onVerify={handleVerify} isLoading={isVerifying} />
+        </div>
+      ) : (
+        /* Screen 2: Results View (Split Pane) */
+        <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
+          {/* Left Pane - Map View (60-65% width) */}
+          <div className="lg:w-[63%] h-[50vh] lg:h-full relative border-b lg:border-b-0 lg:border-r border-border">
+            <MapView coordinates={coordinates} detectionPolygons={result?.detection_polygons} />
+          </div>
+
+          {/* Right Pane - Results (35-40% width) */}
+          <div className="lg:w-[37%] h-[50vh] lg:h-full overflow-y-auto bg-background">
+            <ResultsPanel result={result} isLoading={isVerifying} />
           </div>
         </div>
-
-        {/* Right Panel - Results (30-35% width) */}
-        <div className="lg:w-[32%] h-[50vh] lg:h-full overflow-y-auto bg-background">
-          <ResultsPanel result={result} isLoading={isVerifying} />
-        </div>
-      </div>
+      )}
     </div>
   );
 };

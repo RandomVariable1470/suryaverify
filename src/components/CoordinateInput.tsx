@@ -34,19 +34,20 @@ const CoordinateInput = ({ onVerify, isLoading }: CoordinateInputProps) => {
   };
 
   return (
-    <Card className="p-5 bg-card/95 backdrop-blur-md shadow-xl border-border/50 rounded-xl animate-fade-in hover:shadow-2xl transition-all duration-300">
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div className="flex items-center gap-2 mb-1">
-          <div className="p-1.5 rounded-lg bg-primary/10">
-            <MapPin className="w-4 h-4 text-primary" />
+    <Card className="p-8 shadow-[0_2px_8px_hsla(150,15%,20%,0.08)] border border-border rounded-2xl animate-fade-in w-full max-w-md">
+      <form onSubmit={handleSubmit} className="space-y-6">
+        <div className="text-center space-y-2">
+          <div className="inline-flex p-3 rounded-xl bg-primary/10 mb-2">
+            <MapPin className="w-6 h-6 text-primary" />
           </div>
-          <h3 className="font-semibold text-sm text-foreground">Enter Coordinates</h3>
+          <h2 className="text-2xl font-bold text-foreground">Enter Coordinates</h2>
+          <p className="text-sm text-muted-foreground">Provide location for solar verification</p>
         </div>
         
-        <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-4">
           <div>
-            <label className="text-xs font-medium text-muted-foreground mb-1.5 block flex items-center gap-1">
-              <span className="text-primary">•</span> Latitude
+            <label className="text-sm font-semibold text-foreground mb-2 block">
+              Latitude
             </label>
             <Input
               type="number"
@@ -54,12 +55,12 @@ const CoordinateInput = ({ onVerify, isLoading }: CoordinateInputProps) => {
               placeholder="28.6448"
               value={lat}
               onChange={(e) => setLat(e.target.value)}
-              className="text-sm font-mono h-9 border-border/50 focus:border-primary/50 transition-colors"
+              className="h-11 font-mono border-border focus:border-primary transition-colors"
             />
           </div>
           <div>
-            <label className="text-xs font-medium text-muted-foreground mb-1.5 block flex items-center gap-1">
-              <span className="text-primary">•</span> Longitude
+            <label className="text-sm font-semibold text-foreground mb-2 block">
+              Longitude
             </label>
             <Input
               type="number"
@@ -67,26 +68,23 @@ const CoordinateInput = ({ onVerify, isLoading }: CoordinateInputProps) => {
               placeholder="77.2167"
               value={lon}
               onChange={(e) => setLon(e.target.value)}
-              className="text-sm font-mono h-9 border-border/50 focus:border-primary/50 transition-colors"
+              className="h-11 font-mono border-border focus:border-primary transition-colors"
             />
           </div>
         </div>
 
         <Button 
           type="submit" 
-          className="w-full bg-primary hover:bg-primary/90 h-10 text-sm font-semibold shadow-md hover:shadow-lg active:scale-[0.98] transition-all duration-200"
+          className="w-full h-12 text-base font-semibold shadow-sm hover:shadow-md active:scale-[0.98] transition-all duration-200"
           disabled={isLoading}
         >
           {isLoading ? (
             <>
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              <Loader2 className="w-5 h-5 mr-2 animate-spin" />
               Verifying...
             </>
           ) : (
-            <>
-              <MapPin className="w-4 h-4 mr-2" />
-              Run Verification
-            </>
+            "Run Verification"
           )}
         </Button>
       </form>
