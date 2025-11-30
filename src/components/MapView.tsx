@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Card } from "./ui/card";
 import { Button } from "./ui/button";
-import { AlertCircle, RefreshCw, Maximize2, Eye, GitCompare } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
+import { AlertCircle, RefreshCw, Maximize2, Eye, GitCompare, Info } from "lucide-react";
 import mapboxgl from "mapbox-gl";
 import MapboxDraw from "@mapbox/mapbox-gl-draw";
 import "@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css";
@@ -40,6 +41,7 @@ const MapView = ({
   const markerRef = useRef<mapboxgl.Marker | null>(null);
   const drawRef = useRef<MapboxDraw | null>(null);
   const [isLoadingToken, setIsLoadingToken] = useState(true);
+  const [isMapLoaded, setIsMapLoaded] = useState(false);
   const [showPVMask, setShowPVMask] = useState(false);
   const [localAnnotations, setLocalAnnotations] = useState<GroundTruthAnnotation[]>([]);
 
@@ -125,6 +127,11 @@ const MapView = ({
         mapRef.current.on('draw.create', handleDrawCreate);
         mapRef.current.on('draw.update', handleDrawUpdate);
         mapRef.current.on('draw.delete', handleDrawDelete);
+
+        // Track map load state
+        mapRef.current.on('load', () => {
+          setIsMapLoaded(true);
+        });
 
         setIsLoadingToken(false);
       } catch (err) {
@@ -292,16 +299,26 @@ const MapView = ({
       .setLngLat([coordinates.lon, coordinates.lat])
       .addTo(mapRef.current);
 
-    // Smooth fly animation
-    mapRef.current.flyTo({
-      center: [coordinates.lon, coordinates.lat],
-      zoom: 19,
-      pitch: 45,
-      duration: 2000,
-      essential: true,
-      easing: (t) => t * (2 - t), // ease-out
-    });
-  }, [coordinates]);
+    // Smooth fly animation - wait for map to be fully loaded
+    const flyToLocation = () => {
+      if (!mapRef.current) return;
+      mapRef.current.flyTo({
+        center: [coordinates.lon, coordinates.lat],
+        zoom: 19,
+        pitch: 45,
+        duration: 2000,
+        essential: true,
+        easing: (t) => t * (2 - t), // ease-out
+      });
+    };
+
+    if (isMapLoaded) {
+      flyToLocation();
+    } else {
+      // Wait for map to load if it hasn't yet
+      mapRef.current.once('load', flyToLocation);
+    }
+  }, [coordinates, isMapLoaded]);
 
   // Add detection polygons overlay (AI detections)
   useEffect(() => {
@@ -507,10 +524,32 @@ const MapView = ({
                   {coordinates.lat.toFixed(6)}, {coordinates.lon.toFixed(6)}
                 </p>
               </div>
-              <div className="text-right">
-                <p className="text-xs text-muted-foreground">Zoom: 19</p>
-                <p className="text-xs text-success font-medium">High Resolution</p>
-              </div>
+              <TooltipProvider>
+                <div className="text-right">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div className="flex items-center gap-1 justify-end cursor-help">
+                        <p className="text-xs text-muted-foreground">Zoom: 19</p>
+                        <Info className="w-3 h-3 text-muted-foreground" />
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p className="text-xs">Zoom level 19 provides ~0.3m/pixel resolution</p>
+                    </TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div className="flex items-center gap-1 justify-end cursor-help">
+                        <p className="text-xs text-success font-medium">High Resolution</p>
+                        <Info className="w-3 h-3 text-success" />
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p className="text-xs">Sufficient detail for panel detection</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+              </TooltipProvider>
             </div>
           </Card>
         </div>
