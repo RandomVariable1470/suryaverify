@@ -1,11 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import { Card } from "./ui/card";
 import { Button } from "./ui/button";
-import { AlertCircle, RefreshCw, Maximize2, Eye } from "lucide-react";
+import { AlertCircle, RefreshCw, Maximize2, Eye, GitCompare } from "lucide-react";
 import mapboxgl from "mapbox-gl";
+import MapboxDraw from "@mapbox/mapbox-gl-draw";
+import "@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css";
 import "mapbox-gl/dist/mapbox-gl.css";
+import * as turf from "@turf/turf";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { GroundTruthAnnotation } from "@/types/annotation";
+import AnnotationToolbar from "./AnnotationToolbar";
 
 interface MapViewProps {
   coordinates: { lat: number; lon: number } | null;
@@ -14,14 +19,29 @@ interface MapViewProps {
     coordinates: number[][][];
     confidence: number;
   }>;
+  annotationMode: boolean;
+  onAnnotationsChange: (annotations: GroundTruthAnnotation[]) => void;
+  groundTruthAnnotations: GroundTruthAnnotation[];
+  showComparison: boolean;
+  onToggleComparison: () => void;
 }
 
-const MapView = ({ coordinates, detectionPolygons }: MapViewProps) => {
+const MapView = ({ 
+  coordinates, 
+  detectionPolygons,
+  annotationMode,
+  onAnnotationsChange,
+  groundTruthAnnotations,
+  showComparison,
+  onToggleComparison
+}: MapViewProps) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const markerRef = useRef<mapboxgl.Marker | null>(null);
+  const drawRef = useRef<MapboxDraw | null>(null);
   const [isLoadingToken, setIsLoadingToken] = useState(true);
   const [showPVMask, setShowPVMask] = useState(false);
+  const [localAnnotations, setLocalAnnotations] = useState<GroundTruthAnnotation[]>([]);
 
   useEffect(() => {
     const initializeMap = async () => {
@@ -54,6 +74,58 @@ const MapView = ({ coordinates, detectionPolygons }: MapViewProps) => {
           'top-right'
         );
 
+        // Initialize MapboxDraw
+        drawRef.current = new MapboxDraw({
+          displayControlsDefault: false,
+          controls: {},
+          styles: [
+            // Ground truth polygons style (green)
+            {
+              id: 'gl-draw-polygon-fill',
+              type: 'fill',
+              filter: ['all', ['==', '$type', 'Polygon'], ['!=', 'mode', 'static']],
+              paint: {
+                'fill-color': 'hsl(142, 76%, 36%)',
+                'fill-opacity': 0.4
+              }
+            },
+            {
+              id: 'gl-draw-polygon-stroke-active',
+              type: 'line',
+              filter: ['all', ['==', '$type', 'Polygon'], ['!=', 'mode', 'static']],
+              paint: {
+                'line-color': 'hsl(142, 76%, 36%)',
+                'line-width': 3
+              }
+            },
+            {
+              id: 'gl-draw-line-active',
+              type: 'line',
+              filter: ['all', ['==', '$type', 'LineString'], ['==', 'active', 'true']],
+              paint: {
+                'line-color': 'hsl(142, 76%, 36%)',
+                'line-width': 2
+              }
+            },
+            {
+              id: 'gl-draw-polygon-and-line-vertex-active',
+              type: 'circle',
+              filter: ['all', ['==', 'meta', 'vertex'], ['==', '$type', 'Point']],
+              paint: {
+                'circle-radius': 5,
+                'circle-color': 'hsl(142, 76%, 36%)'
+              }
+            }
+          ]
+        });
+
+        mapRef.current.addControl(drawRef.current, 'top-right');
+
+        // Handle drawing events
+        mapRef.current.on('draw.create', handleDrawCreate);
+        mapRef.current.on('draw.update', handleDrawUpdate);
+        mapRef.current.on('draw.delete', handleDrawDelete);
+
         setIsLoadingToken(false);
       } catch (err) {
         console.error('Map initialization error:', err);
@@ -69,11 +141,136 @@ const MapView = ({ coordinates, detectionPolygons }: MapViewProps) => {
         markerRef.current.remove();
       }
       if (mapRef.current) {
+        mapRef.current.off('draw.create', handleDrawCreate);
+        mapRef.current.off('draw.update', handleDrawUpdate);
+        mapRef.current.off('draw.delete', handleDrawDelete);
         mapRef.current.remove();
         mapRef.current = null;
       }
     };
   }, []);
+
+  // Handle drawing events
+  const handleDrawCreate = (e: any) => {
+    const features = e.features;
+    const newAnnotations: GroundTruthAnnotation[] = features.map((feature: any) => {
+      const polygon = turf.polygon(feature.geometry.coordinates);
+      const area = turf.area(polygon);
+      
+      return {
+        id: feature.id,
+        type: 'Polygon',
+        coordinates: feature.geometry.coordinates,
+        created_at: new Date().toISOString(),
+        area_sqm: area,
+        panel_type: 'unknown',
+        notes: ''
+      };
+    });
+    
+    setLocalAnnotations(prev => [...prev, ...newAnnotations]);
+  };
+
+  const handleDrawUpdate = (e: any) => {
+    const features = e.features;
+    setLocalAnnotations(prev => {
+      const updated = [...prev];
+      features.forEach((feature: any) => {
+        const idx = updated.findIndex(a => a.id === feature.id);
+        if (idx !== -1) {
+          const polygon = turf.polygon(feature.geometry.coordinates);
+          const area = turf.area(polygon);
+          updated[idx] = {
+            ...updated[idx],
+            coordinates: feature.geometry.coordinates,
+            area_sqm: area
+          };
+        }
+      });
+      return updated;
+    });
+  };
+
+  const handleDrawDelete = (e: any) => {
+    const deletedIds = e.features.map((f: any) => f.id);
+    setLocalAnnotations(prev => prev.filter(a => !deletedIds.includes(a.id)));
+  };
+
+  // Annotation toolbar handlers
+  const handleToggleAnnotationMode = () => {
+    if (annotationMode) {
+      onAnnotationsChange(localAnnotations);
+    }
+  };
+
+  const handleDrawPolygon = () => {
+    if (drawRef.current) {
+      drawRef.current.changeMode('draw_polygon');
+    }
+  };
+
+  const handleDrawRectangle = () => {
+    if (drawRef.current) {
+      // MapboxDraw doesn't have built-in rectangle, using polygon instead
+      drawRef.current.changeMode('draw_polygon');
+      toast.info("Draw a polygon with 4 corners for a rectangle");
+    }
+  };
+
+  const handleToggleEdit = () => {
+    if (drawRef.current) {
+      const mode = drawRef.current.getMode();
+      if (mode === 'simple_select') {
+        drawRef.current.changeMode('direct_select');
+      } else {
+        drawRef.current.changeMode('simple_select');
+      }
+    }
+  };
+
+  const handleDeleteSelected = () => {
+    if (drawRef.current) {
+      const selected = drawRef.current.getSelected();
+      if (selected.features.length > 0) {
+        drawRef.current.trash();
+        toast.success("Deleted selected annotation");
+      } else {
+        toast.error("No annotation selected");
+      }
+    }
+  };
+
+  const handleClearAll = () => {
+    if (drawRef.current) {
+      drawRef.current.deleteAll();
+      setLocalAnnotations([]);
+      toast.success("All annotations cleared");
+    }
+  };
+
+  const handleSaveAnnotations = () => {
+    onAnnotationsChange(localAnnotations);
+    toast.success(`Saved ${localAnnotations.length} annotation${localAnnotations.length !== 1 ? 's' : ''}`);
+  };
+
+  // Sync ground truth annotations when they change
+  useEffect(() => {
+    if (drawRef.current && groundTruthAnnotations.length > 0) {
+      drawRef.current.deleteAll();
+      groundTruthAnnotations.forEach(annotation => {
+        drawRef.current?.add({
+          type: 'Feature',
+          id: annotation.id,
+          properties: {},
+          geometry: {
+            type: 'Polygon',
+            coordinates: annotation.coordinates
+          }
+        });
+      });
+      setLocalAnnotations(groundTruthAnnotations);
+    }
+  }, [groundTruthAnnotations]);
 
   useEffect(() => {
     if (!mapRef.current || !coordinates) return;
@@ -106,9 +303,9 @@ const MapView = ({ coordinates, detectionPolygons }: MapViewProps) => {
     });
   }, [coordinates]);
 
-  // Add detection polygons overlay
+  // Add detection polygons overlay (AI detections)
   useEffect(() => {
-    if (!mapRef.current || !detectionPolygons || !showPVMask) return;
+    if (!mapRef.current || !detectionPolygons || (!showPVMask && !showComparison)) return;
 
     const map = mapRef.current;
 
@@ -152,30 +349,33 @@ const MapView = ({ coordinates, detectionPolygons }: MapViewProps) => {
         }
       });
 
-      // Add fill layer
+      // Add fill layer with dashed pattern for AI detection
       map.addLayer({
         id: 'detection-polygons',
         type: 'fill',
         source: 'detection-polygons',
         paint: {
-          'fill-color': '#f59e0b', // Saffron/amber color
-          'fill-opacity': 0.3
+          'fill-color': 'hsl(38, 92%, 50%)', // Saffron/amber color
+          'fill-opacity': showComparison ? 0.2 : 0.3
         }
       });
 
-      // Add outline layer
+      // Add dashed outline layer for AI detection
       map.addLayer({
         id: 'detection-polygons-outline',
         type: 'line',
         source: 'detection-polygons',
         paint: {
-          'line-color': '#f59e0b',
+          'line-color': 'hsl(38, 92%, 50%)',
           'line-width': 3,
-          'line-opacity': 0.8
+          'line-opacity': 0.8,
+          'line-dasharray': [2, 2]
         }
       });
 
-      toast.success(`${detectionPolygons.length} detection zone${detectionPolygons.length > 1 ? 's' : ''} displayed`);
+      if (!showComparison) {
+        toast.success(`${detectionPolygons.length} detection zone${detectionPolygons.length > 1 ? 's' : ''} displayed`);
+      }
     }
 
     return () => {
@@ -191,7 +391,7 @@ const MapView = ({ coordinates, detectionPolygons }: MapViewProps) => {
         map.removeSource('detection-polygons');
       }
     };
-  }, [detectionPolygons, showPVMask]);
+  }, [detectionPolygons, showPVMask, showComparison]);
 
   const handleRefresh = () => {
     if (mapRef.current && coordinates) {
@@ -210,6 +410,21 @@ const MapView = ({ coordinates, detectionPolygons }: MapViewProps) => {
     <div className="w-full h-full relative bg-muted/20">
       <div ref={mapContainerRef} className="w-full h-full" />
       
+      {/* Annotation Toolbar */}
+      {coordinates && !isLoadingToken && (
+        <AnnotationToolbar
+          isActive={annotationMode}
+          annotationCount={localAnnotations.length}
+          onToggleMode={handleToggleAnnotationMode}
+          onDrawPolygon={handleDrawPolygon}
+          onDrawRectangle={handleDrawRectangle}
+          onToggleEdit={handleToggleEdit}
+          onDeleteSelected={handleDeleteSelected}
+          onClearAll={handleClearAll}
+          onSave={handleSaveAnnotations}
+        />
+      )}
+      
       {/* Map Control Buttons */}
       {coordinates && !isLoadingToken && (
         <div className="absolute top-6 right-6 z-10 flex flex-col gap-2 animate-fade-in">
@@ -217,10 +432,27 @@ const MapView = ({ coordinates, detectionPolygons }: MapViewProps) => {
             size="sm"
             variant={showPVMask ? "default" : "secondary"}
             className="shadow-lg backdrop-blur-sm bg-card/95 hover:bg-card border-border/50 transition-all"
-            onClick={() => setShowPVMask(!showPVMask)}
+            onClick={() => {
+              if (!detectionPolygons || detectionPolygons.length === 0) {
+                toast.error("No detection zones available");
+                return;
+              }
+              setShowPVMask(!showPVMask);
+            }}
+            disabled={!detectionPolygons || detectionPolygons.length === 0}
           >
             <Eye className="w-4 h-4 mr-2" />
             PV Mask
+          </Button>
+          <Button
+            size="sm"
+            variant={showComparison ? "default" : "secondary"}
+            className="shadow-lg backdrop-blur-sm bg-card/95 hover:bg-card border-border/50 transition-all"
+            onClick={onToggleComparison}
+            disabled={!detectionPolygons || detectionPolygons.length === 0 || groundTruthAnnotations.length === 0}
+          >
+            <GitCompare className="w-4 h-4 mr-2" />
+            Compare
           </Button>
           <Button
             size="sm"
