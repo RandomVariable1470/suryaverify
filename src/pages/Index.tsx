@@ -339,14 +339,16 @@ const Index = () => {
 
   return (
     <div className="flex flex-col h-screen bg-background">
-      <Header 
-        onBulkUpload={handleBulkUpload}
-      />
+      <Header />
       
       {!showResults ? (
         /* Screen 1: Coordinate Input (No Map) */
         <div className="flex-1 flex items-center justify-center p-6">
-          <CoordinateInput onVerify={handleVerify} isLoading={isVerifying} />
+          <CoordinateInput 
+            onVerify={handleVerify} 
+            onBulkUpload={handleBulkUpload}
+            isLoading={isVerifying} 
+          />
         </div>
       ) : (
         /* Screen 2: Results View (Split Pane) */
