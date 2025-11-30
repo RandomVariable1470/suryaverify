@@ -6,11 +6,9 @@ import { useTheme } from "@/hooks/use-theme";
 
 interface HeaderProps {
   onBulkUpload: (coordinates: Array<{ lat: number; lon: number; sample_id?: string }>) => void;
-  onExport: () => void;
-  hasResults: boolean;
 }
 
-const Header = ({ onBulkUpload, onExport, hasResults }: HeaderProps) => {
+const Header = ({ onBulkUpload }: HeaderProps) => {
   const { theme, toggleTheme } = useTheme();
 
   return (
@@ -38,17 +36,6 @@ const Header = ({ onBulkUpload, onExport, hasResults }: HeaderProps) => {
         {/* Action Buttons */}
         <div className="flex items-center gap-2">
           <BulkUploadDialog onUpload={onBulkUpload} />
-          
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onExport}
-            disabled={!hasResults}
-            className="gap-2"
-          >
-            <Download className="w-4 h-4" />
-            Export
-          </Button>
 
           <button
             onClick={toggleTheme}

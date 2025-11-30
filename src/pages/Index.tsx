@@ -299,8 +299,6 @@ const Index = () => {
     <div className="flex flex-col h-screen bg-background">
       <Header 
         onBulkUpload={handleBulkUpload}
-        onExport={handleExport}
-        hasResults={allResults.length > 0}
       />
       
       {!showResults ? (
