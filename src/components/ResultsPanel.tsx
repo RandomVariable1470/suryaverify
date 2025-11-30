@@ -1,17 +1,34 @@
-import { CheckCircle2, XCircle, AlertCircle, Download, MapPin, Image as ImageIcon } from "lucide-react";
+import { CheckCircle2, XCircle, AlertCircle, Download, MapPin, Image as ImageIcon, Pencil } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "./ui/card";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
 import { VerificationResult } from "@/types/verification";
+import { GroundTruthAnnotation, AnnotationComparison } from "@/types/annotation";
 import AnimatedNumber from "./AnimatedNumber";
+import AnnotationPanel from "./AnnotationPanel";
 import { toast } from "sonner";
 
 interface ResultsPanelProps {
   result: VerificationResult | null;
   isLoading: boolean;
+  annotationMode: boolean;
+  onToggleAnnotationMode: () => void;
+  groundTruthAnnotations: GroundTruthAnnotation[];
+  comparison: AnnotationComparison | null;
+  onUpdateAnnotation: (id: string, updates: Partial<GroundTruthAnnotation>) => void;
+  onDeleteAnnotation: (id: string) => void;
 }
 
-const ResultsPanel = ({ result, isLoading }: ResultsPanelProps) => {
+const ResultsPanel = ({ 
+  result, 
+  isLoading,
+  annotationMode,
+  onToggleAnnotationMode,
+  groundTruthAnnotations,
+  comparison,
+  onUpdateAnnotation,
+  onDeleteAnnotation
+}: ResultsPanelProps) => {
   const handleExportResult = () => {
     if (!result) return;
 
@@ -234,8 +251,38 @@ const ResultsPanel = ({ result, isLoading }: ResultsPanelProps) => {
         </CardContent>
       </Card>
 
-      {/* Card 5: Download Audit Package */}
+      {/* Annotation Controls */}
       <Card className="shadow-[0_2px_8px_hsla(150,15%,20%,0.08)] dark:shadow-[0_2px_8px_hsla(0,0%,0%,0.3)] border border-border animate-fade-in rounded-2xl" style={{ animationDelay: "0.4s" }}>
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Pencil className="w-5 h-5" />
+            Ground Truth Annotation
+          </CardTitle>
+          <CardDescription>
+            Manually draw panel boundaries for comparison
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Button 
+            onClick={onToggleAnnotationMode}
+            variant={annotationMode ? "secondary" : "default"}
+            className="w-full gap-2"
+          >
+            {annotationMode ? "Exit Annotation Mode" : "Start Annotating"}
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* Annotation Panel */}
+      <AnnotationPanel
+        annotations={groundTruthAnnotations}
+        comparison={comparison}
+        onUpdateAnnotation={onUpdateAnnotation}
+        onDeleteAnnotation={onDeleteAnnotation}
+      />
+
+      {/* Card 5: Download Audit Package */}
+      <Card className="shadow-[0_2px_8px_hsla(150,15%,20%,0.08)] dark:shadow-[0_2px_8px_hsla(0,0%,0%,0.3)] border border-border animate-fade-in rounded-2xl" style={{ animationDelay: "0.5s" }}>
         <CardContent className="pt-6">
           <Button 
             onClick={handleExportResult}
