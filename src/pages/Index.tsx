@@ -5,6 +5,7 @@ import ResultsPanel from "@/components/ResultsPanel";
 import CoordinateInput from "@/components/CoordinateInput";
 import { VerificationResult } from "@/types/verification";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 
 const Index = () => {
   const [coordinates, setCoordinates] = useState<{ lat: number; lon: number } | null>(null);
@@ -35,32 +36,78 @@ const Index = () => {
     setIsVerifying(true);
     setCoordinates({ lat, lon });
     
-    // Simulate AI verification (mock data for now)
-    setTimeout(() => {
-      const mockResult = generateMockResult(lat, lon);
-      setResult(mockResult);
-      setAllResults(prev => [...prev, mockResult]);
+    try {
+      // Call AI-powered verification edge function
+      const { data, error } = await supabase.functions.invoke('verify-solar', {
+        body: { lat, lon }
+      });
+
+      if (error) {
+        console.error('Verification error:', error);
+        toast.error(error.message || 'Failed to verify location');
+        setIsVerifying(false);
+        return;
+      }
+
+      if (!data) {
+        toast.error('No data returned from verification');
+        setIsVerifying(false);
+        return;
+      }
+
+      setResult(data);
+      setAllResults(prev => [...prev, data]);
+      toast.success(data.has_solar ? 'Solar panels detected!' : 'No solar panels found');
+    } catch (err) {
+      console.error('Verification failed:', err);
+      toast.error('Verification failed. Please try again.');
+    } finally {
       setIsVerifying(false);
-    }, 2000);
+    }
   };
 
   const handleBulkUpload = async (coords: Array<{ lat: number; lon: number; sample_id?: string }>) => {
     toast.info(`Processing ${coords.length} locations...`);
     
-    // Process first location immediately
+    // Process first location immediately to show on map
     if (coords.length > 0) {
       const firstCoord = coords[0];
       handleVerify(firstCoord.lat, firstCoord.lon);
     }
 
-    // Simulate batch processing for remaining
-    setTimeout(() => {
-      const batchResults = coords.map(coord => 
-        generateMockResult(coord.lat, coord.lon, coord.sample_id)
-      );
-      setAllResults(prev => [...prev, ...batchResults]);
-      toast.success(`Completed verification for ${coords.length} locations`);
-    }, 3000);
+    // Process remaining locations in background
+    let successCount = 0;
+    let failCount = 0;
+
+    for (let i = 1; i < coords.length; i++) {
+      try {
+        const coord = coords[i];
+        const { data, error } = await supabase.functions.invoke('verify-solar', {
+          body: { 
+            lat: coord.lat, 
+            lon: coord.lon,
+            sample_id: coord.sample_id 
+          }
+        });
+
+        if (!error && data) {
+          setAllResults(prev => [...prev, data]);
+          successCount++;
+        } else {
+          failCount++;
+        }
+      } catch (err) {
+        console.error('Bulk verification error:', err);
+        failCount++;
+      }
+    }
+
+    if (successCount > 0) {
+      toast.success(`Completed ${successCount} verifications successfully`);
+    }
+    if (failCount > 0) {
+      toast.error(`${failCount} verifications failed`);
+    }
   };
 
   const handleExport = () => {
