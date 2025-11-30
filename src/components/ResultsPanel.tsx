@@ -149,11 +149,33 @@ const ResultsPanel = ({ result, isLoading }: ResultsPanelProps) => {
 
       {/* Actions */}
       <div className="flex gap-2">
-        <Button variant="outline" className="flex-1 gap-2">
+        <Button 
+          variant="outline" 
+          className="flex-1 gap-2"
+          onClick={() => {
+            // Placeholder for overlay view
+            alert('Overlay visualization coming soon');
+          }}
+        >
           <Eye className="w-4 h-4" />
           View Overlay
         </Button>
-        <Button variant="default" className="flex-1 gap-2">
+        <Button 
+          variant="default" 
+          className="flex-1 gap-2"
+          onClick={() => {
+            const dataStr = JSON.stringify(result, null, 2);
+            const blob = new Blob([dataStr], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `verification_${result.sample_id}.json`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+          }}
+        >
           <Download className="w-4 h-4" />
           Download JSON
         </Button>

@@ -1,7 +1,14 @@
-import { Sun, Upload, Download } from "lucide-react";
+import { Sun, Download } from "lucide-react";
 import { Button } from "./ui/button";
+import BulkUploadDialog from "./BulkUploadDialog";
 
-const Header = () => {
+interface HeaderProps {
+  onBulkUpload: (coordinates: Array<{ lat: number; lon: number; sample_id?: string }>) => void;
+  onExport: () => void;
+  hasResults: boolean;
+}
+
+const Header = ({ onBulkUpload, onExport, hasResults }: HeaderProps) => {
   return (
     <header className="border-b border-border bg-card shadow-sm">
       <div className="container mx-auto px-4 py-3 flex items-center justify-between">
@@ -16,11 +23,14 @@ const Header = () => {
         </div>
 
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" className="gap-2">
-            <Upload className="w-4 h-4" />
-            <span className="hidden sm:inline">Bulk Upload</span>
-          </Button>
-          <Button variant="outline" size="sm" className="gap-2">
+          <BulkUploadDialog onUpload={onBulkUpload} />
+          <Button 
+            variant="outline" 
+            size="sm" 
+            className="gap-2"
+            onClick={onExport}
+            disabled={!hasResults}
+          >
             <Download className="w-4 h-4" />
             <span className="hidden sm:inline">Export</span>
           </Button>
