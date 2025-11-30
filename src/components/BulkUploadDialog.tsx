@@ -15,7 +15,7 @@ import { Upload, FileText, X, Image as ImageIcon } from "lucide-react";
 import { toast } from "sonner";
 
 interface BulkUploadDialogProps {
-  onUpload: (coordinates: Array<{ lat: number; lon: number; sample_id?: string }>) => void;
+  onUpload: (coordinates: Array<{ lat: number; lon: number; sample_id?: string; imageData?: string }>) => void;
 }
 
 const BulkUploadDialog = ({ onUpload }: BulkUploadDialogProps) => {
@@ -139,7 +139,7 @@ const BulkUploadDialog = ({ onUpload }: BulkUploadDialogProps) => {
         toast.error("Failed to parse CSV file");
       }
     } else {
-      // Image mode
+      // Image mode - analyze uploaded image
       if (!imageFile || !imageLat || !imageLon) {
         toast.error("Please provide image and coordinates");
         return;
@@ -158,11 +158,25 @@ const BulkUploadDialog = ({ onUpload }: BulkUploadDialogProps) => {
         return;
       }
 
-      // For now, just use the coordinates - in the future, this could upload the image to edge function
-      onUpload([{ lat, lon }]);
-      toast.info("Image analysis coming soon - using coordinates for verification");
-      setOpen(false);
-      resetImageMode();
+      // Read image as base64
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        const imageData = e.target?.result as string;
+        
+        // Create a coordinate object with the image data
+        // This will be sent to the verify-solar edge function
+        onUpload([{ lat, lon, imageData } as any]);
+        toast.success("Analyzing uploaded image...");
+        setOpen(false);
+        resetImageMode();
+      };
+      
+      reader.onerror = () => {
+        toast.error("Failed to read image file");
+      };
+      
+      reader.readAsDataURL(imageFile);
+      return; // Wait for async operation
     }
   };
 

@@ -5,7 +5,7 @@ import HelpTooltip from "./HelpTooltip";
 import { useTheme } from "@/hooks/use-theme";
 
 interface HeaderProps {
-  onBulkUpload: (coordinates: Array<{ lat: number; lon: number; sample_id?: string }>) => void;
+  onBulkUpload: (coordinates: Array<{ lat: number; lon: number; sample_id?: string; imageData?: string }>) => void;
 }
 
 const Header = ({ onBulkUpload }: HeaderProps) => {

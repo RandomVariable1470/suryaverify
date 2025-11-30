@@ -71,28 +71,70 @@ const Index = () => {
     }
   };
 
-  const handleBulkUpload = async (coords: Array<{ lat: number; lon: number; sample_id?: string }>) => {
-    toast.info(`Processing ${coords.length} locations...`);
+  const handleBulkUpload = async (coords: Array<{ lat: number; lon: number; sample_id?: string; imageData?: string }>) => {
+    toast.info(`Processing ${coords.length} location${coords.length > 1 ? 's' : ''}...`);
     
     // Process first location immediately to show on map
     if (coords.length > 0) {
       const firstCoord = coords[0];
-      handleVerify(firstCoord.lat, firstCoord.lon);
+      if (firstCoord.imageData) {
+        // Direct image upload - call edge function with imageData
+        setIsVerifying(true);
+        setCoordinates({ lat: firstCoord.lat, lon: firstCoord.lon });
+        
+        try {
+          const { data, error } = await supabase.functions.invoke('verify-solar', {
+            body: { 
+              lat: firstCoord.lat, 
+              lon: firstCoord.lon,
+              imageData: firstCoord.imageData,
+              sample_id: firstCoord.sample_id 
+            }
+          });
+
+          if (error) {
+            console.error('Image verification error:', error);
+            toast.error('Failed to analyze uploaded image');
+            setIsVerifying(false);
+            return;
+          }
+
+          if (data) {
+            setResult(data);
+            setAllResults(prev => [...prev, data]);
+            toast.success(data.has_solar ? 'Solar panels detected in image!' : 'No solar panels found in image');
+          }
+        } catch (err) {
+          console.error('Image verification failed:', err);
+          toast.error('Image verification failed. Please try again.');
+        } finally {
+          setIsVerifying(false);
+        }
+      } else {
+        // Regular coordinate-based verification
+        handleVerify(firstCoord.lat, firstCoord.lon);
+      }
     }
 
-    // Process remaining locations in background
+    // Process remaining locations in background (for CSV uploads)
     let successCount = 0;
     let failCount = 0;
 
     for (let i = 1; i < coords.length; i++) {
       try {
         const coord = coords[i];
+        const body: any = { 
+          lat: coord.lat, 
+          lon: coord.lon,
+          sample_id: coord.sample_id 
+        };
+        
+        if (coord.imageData) {
+          body.imageData = coord.imageData;
+        }
+
         const { data, error } = await supabase.functions.invoke('verify-solar', {
-          body: { 
-            lat: coord.lat, 
-            lon: coord.lon,
-            sample_id: coord.sample_id 
-          }
+          body
         });
 
         if (!error && data) {
