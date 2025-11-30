@@ -1,14 +1,8 @@
-import { FileUp, Download, Sun, Moon } from "lucide-react";
-import { Button } from "./ui/button";
-import BulkUploadDialog from "./BulkUploadDialog";
+import { Sun, Moon } from "lucide-react";
 import HelpTooltip from "./HelpTooltip";
 import { useTheme } from "@/hooks/use-theme";
 
-interface HeaderProps {
-  onBulkUpload: (coordinates: Array<{ lat: number; lon: number; sample_id?: string; imageData?: string }>) => void;
-}
-
-const Header = ({ onBulkUpload }: HeaderProps) => {
+const Header = () => {
   const { theme, toggleTheme } = useTheme();
 
   return (
@@ -35,8 +29,6 @@ const Header = ({ onBulkUpload }: HeaderProps) => {
 
         {/* Action Buttons */}
         <div className="flex items-center gap-2">
-          <BulkUploadDialog onUpload={onBulkUpload} />
-
           <button
             onClick={toggleTheme}
             className="p-2 rounded-lg hover:bg-secondary transition-colors"
