@@ -173,17 +173,39 @@ const ResultsPanel = ({ result, isLoading }: ResultsPanelProps) => {
             </div>
             Detection Overlay
           </h4>
-          <div className="relative aspect-video bg-muted/30 rounded-lg overflow-hidden border border-border/50 group cursor-pointer hover:border-primary/50 transition-all">
-            <div className="absolute inset-0 flex items-center justify-center">
-              <p className="text-sm text-muted-foreground">Overlay visualization coming soon</p>
+          {result.detection_polygons && result.detection_polygons.length > 0 ? (
+            <div className="space-y-3">
+              <div className="relative aspect-video bg-muted/30 rounded-lg overflow-hidden border border-accent/30">
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="text-center">
+                    <div className="w-16 h-16 rounded-full bg-accent/10 flex items-center justify-center mx-auto mb-3">
+                      <Eye className="w-8 h-8 text-accent" />
+                    </div>
+                    <p className="text-sm font-semibold text-foreground mb-1">
+                      {result.detection_polygons.length} detection zone{result.detection_polygons.length > 1 ? 's' : ''} identified
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Toggle "PV Mask" on the map to view overlays
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <div className="text-xs text-muted-foreground bg-muted/20 p-3 rounded-lg">
+                <p className="font-semibold mb-1">Detection Zones:</p>
+                {result.detection_polygons.map((poly, idx) => (
+                  <p key={idx}>
+                    • Zone {idx + 1}: {(poly.confidence * 100).toFixed(1)}% confidence
+                  </p>
+                ))}
+              </div>
             </div>
-            <div className="absolute inset-0 bg-gradient-to-t from-background/80 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end justify-center pb-4">
-              <Button variant="secondary" size="sm" className="gap-2">
-                <Eye className="w-4 h-4" />
-                View Full Size
-              </Button>
+          ) : (
+            <div className="relative aspect-video bg-muted/30 rounded-lg overflow-hidden border border-border/50">
+              <div className="absolute inset-0 flex items-center justify-center">
+                <p className="text-sm text-muted-foreground">No detection zones identified</p>
+              </div>
             </div>
-          </div>
+          )}
         </Card>
 
         {/* 4️⃣ Image Metadata */}
@@ -223,16 +245,8 @@ const ResultsPanel = ({ result, isLoading }: ResultsPanelProps) => {
         {/* Actions */}
         <div className="flex gap-3 animate-fade-in" style={{ animationDelay: '500ms' }}>
           <Button 
-            variant="outline" 
-            className="flex-1 gap-2 border-border/50 hover:bg-muted/50 hover:border-primary/30 active:scale-[0.98] transition-all"
-            onClick={() => alert('Overlay visualization coming soon')}
-          >
-            <Eye className="w-4 h-4" />
-            View Overlay
-          </Button>
-          <Button 
             variant="default" 
-            className="flex-1 gap-2 shadow-md hover:shadow-lg active:scale-[0.98] transition-all"
+            className="w-full gap-2 shadow-md hover:shadow-lg active:scale-[0.98] transition-all"
             onClick={() => {
               const dataStr = JSON.stringify(result, null, 2);
               const blob = new Blob([dataStr], { type: 'application/json' });

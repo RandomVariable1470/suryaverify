@@ -87,6 +87,7 @@ Your task is to analyze the provided satellite image and determine:
 5. Estimated capacity in kW (use 0.2 kW per m² assumption)
 6. Quality control status (VERIFIABLE or NOT_VERIFIABLE)
 7. Quality control notes explaining your assessment
+8. Bounding boxes for detected solar panel areas (1-5 boxes for main clusters)
 
 DETECTION REQUIREMENTS:
 - Look for rectangular/rectilinear grid patterns characteristic of solar panels
@@ -94,6 +95,14 @@ DETECTION REQUIREMENTS:
 - Detect panel shadows, reflections, or glare patterns
 - Distinguish solar panels from other reflective surfaces (water tanks, tin roofs, skylights)
 - Account for diverse Indian roof types: flat rooftops with obstacles, sloping tiles, tin sheets
+
+BOUNDING BOXES:
+- Provide normalized coordinates (0.0 to 1.0) where (0,0) is top-left, (1,1) is bottom-right
+- Draw boxes around major solar panel clusters/arrays
+- For scattered panels, group nearby ones into logical zones
+- Provide 1-5 boxes total (combine small clusters, separate distinct arrays)
+- Each box should have x_min, y_min, x_max, y_max, and confidence
+- Leave detection_boxes empty array [] if no panels detected
 
 QUALITY CONTROL:
 - Mark as VERIFIABLE only if you can confidently detect solar panels with clear evidence
@@ -178,9 +187,24 @@ Provide your assessment with evidence-based reasoning.`;
                     type: 'array',
                     items: { type: 'string' },
                     description: 'List of quality control observations and reasons for the assessment (3-5 specific notes)'
+                  },
+                  detection_boxes: {
+                    type: 'array',
+                    items: {
+                      type: 'object',
+                      properties: {
+                        x_min: { type: 'number', description: 'Left edge as fraction of image width (0.0 to 1.0)' },
+                        y_min: { type: 'number', description: 'Top edge as fraction of image height (0.0 to 1.0)' },
+                        x_max: { type: 'number', description: 'Right edge as fraction of image width (0.0 to 1.0)' },
+                        y_max: { type: 'number', description: 'Bottom edge as fraction of image height (0.0 to 1.0)' },
+                        confidence: { type: 'number', description: 'Confidence for this specific detection' }
+                      },
+                      required: ['x_min', 'y_min', 'x_max', 'y_max', 'confidence']
+                    },
+                    description: 'Array of bounding boxes for detected solar panel areas. Coordinates are normalized (0.0-1.0). Provide 1-5 boxes for main panel clusters. Leave empty if no panels detected.'
                   }
                 },
-                required: ['has_solar', 'confidence', 'panel_count_est', 'pv_area_sqm_est', 'capacity_kw_est', 'qc_status', 'qc_notes'],
+                required: ['has_solar', 'confidence', 'panel_count_est', 'pv_area_sqm_est', 'capacity_kw_est', 'qc_status', 'qc_notes', 'detection_boxes'],
                 additionalProperties: false
               }
             }
@@ -229,6 +253,35 @@ Provide your assessment with evidence-based reasoning.`;
 
     const verificationData = JSON.parse(toolCall.function.arguments);
 
+    // Convert normalized bounding boxes to geographic coordinates
+    const metersPerPixel = 156543.03392 * Math.cos(lat * Math.PI / 180) / Math.pow(2, zoom);
+    const imageWidthMeters = width * metersPerPixel;
+    const imageHeightMeters = height * metersPerPixel;
+    
+    const detectionPolygons = (verificationData.detection_boxes || []).map((box: any) => {
+      // Convert normalized coordinates (0-1) to meters from center
+      const xMinMeters = (box.x_min - 0.5) * imageWidthMeters;
+      const xMaxMeters = (box.x_max - 0.5) * imageWidthMeters;
+      const yMinMeters = (0.5 - box.y_max) * imageHeightMeters; // Flip Y axis
+      const yMaxMeters = (0.5 - box.y_min) * imageHeightMeters;
+      
+      // Convert meters to lat/lon offset
+      const latPerMeter = 1 / 111320;
+      const lonPerMeter = 1 / (111320 * Math.cos(lat * Math.PI / 180));
+      
+      return {
+        type: 'Polygon',
+        coordinates: [[
+          [lon + xMinMeters * lonPerMeter, lat + yMaxMeters * latPerMeter], // Top-left
+          [lon + xMaxMeters * lonPerMeter, lat + yMaxMeters * latPerMeter], // Top-right
+          [lon + xMaxMeters * lonPerMeter, lat + yMinMeters * latPerMeter], // Bottom-right
+          [lon + xMinMeters * lonPerMeter, lat + yMinMeters * latPerMeter], // Bottom-left
+          [lon + xMinMeters * lonPerMeter, lat + yMaxMeters * latPerMeter], // Close polygon
+        ]],
+        confidence: box.confidence
+      };
+    });
+
     // Construct final result
     const result = {
       sample_id: sample_id || Math.floor(Math.random() * 100000),
@@ -241,6 +294,7 @@ Provide your assessment with evidence-based reasoning.`;
       capacity_kw_est: verificationData.capacity_kw_est,
       qc_status: verificationData.qc_status,
       qc_notes: verificationData.qc_notes,
+      detection_polygons: detectionPolygons,
       image_metadata: {
         source: 'Mapbox Satellite',
         zoom: zoom,

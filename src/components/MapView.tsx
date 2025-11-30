@@ -9,9 +9,14 @@ import { toast } from "sonner";
 
 interface MapViewProps {
   coordinates: { lat: number; lon: number } | null;
+  detectionPolygons?: Array<{
+    type: 'Polygon';
+    coordinates: number[][][];
+    confidence: number;
+  }>;
 }
 
-const MapView = ({ coordinates }: MapViewProps) => {
+const MapView = ({ coordinates, detectionPolygons }: MapViewProps) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const markerRef = useRef<mapboxgl.Marker | null>(null);
@@ -100,6 +105,93 @@ const MapView = ({ coordinates }: MapViewProps) => {
       easing: (t) => t * (2 - t), // ease-out
     });
   }, [coordinates]);
+
+  // Add detection polygons overlay
+  useEffect(() => {
+    if (!mapRef.current || !detectionPolygons || !showPVMask) return;
+
+    const map = mapRef.current;
+
+    // Wait for map to be loaded
+    if (!map.isStyleLoaded()) {
+      map.once('load', () => addPolygons());
+    } else {
+      addPolygons();
+    }
+
+    function addPolygons() {
+      if (!mapRef.current || !detectionPolygons) return;
+      const map = mapRef.current;
+
+      // Remove existing source and layer if they exist
+      if (map.getLayer('detection-polygons')) {
+        map.removeLayer('detection-polygons');
+      }
+      if (map.getLayer('detection-polygons-outline')) {
+        map.removeLayer('detection-polygons-outline');
+      }
+      if (map.getSource('detection-polygons')) {
+        map.removeSource('detection-polygons');
+      }
+
+      if (detectionPolygons.length === 0) return;
+
+      // Add source
+      map.addSource('detection-polygons', {
+        type: 'geojson',
+        data: {
+          type: 'FeatureCollection',
+          features: detectionPolygons.map((polygon, idx) => ({
+            type: 'Feature',
+            properties: {
+              confidence: polygon.confidence,
+              id: idx
+            },
+            geometry: polygon
+          }))
+        }
+      });
+
+      // Add fill layer
+      map.addLayer({
+        id: 'detection-polygons',
+        type: 'fill',
+        source: 'detection-polygons',
+        paint: {
+          'fill-color': '#f59e0b', // Saffron/amber color
+          'fill-opacity': 0.3
+        }
+      });
+
+      // Add outline layer
+      map.addLayer({
+        id: 'detection-polygons-outline',
+        type: 'line',
+        source: 'detection-polygons',
+        paint: {
+          'line-color': '#f59e0b',
+          'line-width': 3,
+          'line-opacity': 0.8
+        }
+      });
+
+      toast.success(`${detectionPolygons.length} detection zone${detectionPolygons.length > 1 ? 's' : ''} displayed`);
+    }
+
+    return () => {
+      if (!mapRef.current) return;
+      const map = mapRef.current;
+      if (map.getLayer('detection-polygons')) {
+        map.removeLayer('detection-polygons');
+      }
+      if (map.getLayer('detection-polygons-outline')) {
+        map.removeLayer('detection-polygons-outline');
+      }
+      if (map.getSource('detection-polygons')) {
+        map.removeSource('detection-polygons');
+      }
+    };
+  }, [detectionPolygons, showPVMask]);
 
   const handleRefresh = () => {
     if (mapRef.current && coordinates) {
