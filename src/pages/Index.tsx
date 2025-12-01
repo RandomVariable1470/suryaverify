@@ -77,14 +77,18 @@ const Index = () => {
     const isImage = coords[0]?.imageData !== undefined;
     setIsImageBased(isImage);
     
+    // Set loading state IMMEDIATELY before any async operations
+    setIsVerifying(true);
+    setVerificationProgress({ current: 0, total: coords.length });
+    
+    // Show the loading screen for a moment before processing
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
     toast.info(`Processing ${coords.length} location${coords.length > 1 ? 's' : ''}...`);
     
     const batchResults: VerificationResult[] = [];
     let successCount = 0;
     let failCount = 0;
-
-    setIsVerifying(true);
-    setVerificationProgress({ current: 0, total: coords.length });
 
     // Process all locations
     for (let i = 0; i < coords.length; i++) {
@@ -267,8 +271,8 @@ const Index = () => {
     }
   };
 
-  // Two-screen mode: show input OR results
-  const showResults = coordinates !== null;
+  // Two-screen mode: show input OR results (including during verification)
+  const showResults = coordinates !== null || isVerifying || result !== null;
 
   return (
     <div className="flex flex-col h-screen bg-background">
