@@ -3,6 +3,7 @@ import Header from "@/components/Header";
 import MapView from "@/components/MapView";
 import ResultsPanel from "@/components/ResultsPanel";
 import CoordinateInput from "@/components/CoordinateInput";
+import VerificationProgress from "@/components/VerificationProgress";
 import { VerificationResult } from "@/types/verification";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -14,6 +15,7 @@ const Index = () => {
   const [currentResultIndex, setCurrentResultIndex] = useState<number>(0);
   const [isVerifying, setIsVerifying] = useState(false);
   const [isImageBased, setIsImageBased] = useState(false);
+  const [verificationProgress, setVerificationProgress] = useState({ current: 0, total: 0 });
 
   const generateMockResult = (lat: number, lon: number, sample_id?: string | number): VerificationResult => {
     return {
@@ -36,6 +38,7 @@ const Index = () => {
 
   const handleVerify = async (lat: number, lon: number) => {
     setIsVerifying(true);
+    setVerificationProgress({ current: 0, total: 1 });
     setCoordinates({ lat, lon });
     
     try {
@@ -66,6 +69,7 @@ const Index = () => {
       toast.error('Verification failed. Please try again.');
     } finally {
       setIsVerifying(false);
+      setVerificationProgress({ current: 0, total: 0 });
     }
   };
 
@@ -80,9 +84,11 @@ const Index = () => {
     let failCount = 0;
 
     setIsVerifying(true);
+    setVerificationProgress({ current: 0, total: coords.length });
 
     // Process all locations
     for (let i = 0; i < coords.length; i++) {
+      setVerificationProgress({ current: i, total: coords.length });
       try {
         const coord = coords[i];
         const body: any = {};
@@ -104,7 +110,6 @@ const Index = () => {
         if (!error && data) {
           batchResults.push(data);
           successCount++;
-          toast.info(`Processed ${successCount} of ${coords.length}...`);
         } else {
           console.error('Verification error:', error);
           failCount++;
@@ -116,6 +121,7 @@ const Index = () => {
     }
 
     setIsVerifying(false);
+    setVerificationProgress({ current: 0, total: 0 });
 
     if (batchResults.length > 0) {
       setAllResults(batchResults);
@@ -280,27 +286,43 @@ const Index = () => {
       ) : (
         /* Screen 2: Results View (Split Pane or Full Results) */
         <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
-          {/* Left Pane - Map View (only for coordinate-based analysis) */}
+          {/* Left Pane - Map View or Progress */}
           {!isImageBased && coordinates && (
             <div className="lg:w-[63%] h-[50vh] lg:h-full relative border-b lg:border-b-0 lg:border-r border-border">
-              <MapView 
-                coordinates={coordinates} 
-                detectionPolygons={result?.detection_polygons}
-              />
+              {isVerifying ? (
+                <VerificationProgress 
+                  currentIndex={verificationProgress.current}
+                  totalCount={verificationProgress.total}
+                  isImageBased={false}
+                />
+              ) : (
+                <MapView 
+                  coordinates={coordinates} 
+                  detectionPolygons={result?.detection_polygons}
+                />
+              )}
             </div>
           )}
 
-          {/* Right Pane - Results */}
+          {/* Right Pane - Results or Progress (for image-based) */}
           <div className={`${isImageBased ? 'w-full' : 'lg:w-[37%]'} h-[50vh] lg:h-full overflow-y-auto bg-background`}>
-            <ResultsPanel 
-              result={result} 
-              isLoading={isVerifying}
-              allResults={allResults}
-              currentResultIndex={currentResultIndex}
-              onNext={handleNextResult}
-              onPrev={handlePrevResult}
-              onReset={handleReset}
-            />
+            {isVerifying && isImageBased ? (
+              <VerificationProgress 
+                currentIndex={verificationProgress.current}
+                totalCount={verificationProgress.total}
+                isImageBased={true}
+              />
+            ) : (
+              <ResultsPanel 
+                result={result} 
+                isLoading={isVerifying}
+                allResults={allResults}
+                currentResultIndex={currentResultIndex}
+                onNext={handleNextResult}
+                onPrev={handlePrevResult}
+                onReset={handleReset}
+              />
+            )}
           </div>
         </div>
       )}
