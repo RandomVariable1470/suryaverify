@@ -24,18 +24,12 @@ serve(async (req) => {
 
     // Check if direct image upload or coordinate-based fetch
     if (imageData) {
-      console.log('Processing direct image upload...');
+      console.log('Processing direct image upload (no coordinates required)...');
       
-      // Validate that coordinates are provided with the image
-      if (!lat || !lon || isNaN(lat) || isNaN(lon)) {
-        return new Response(
-          JSON.stringify({ error: 'Coordinates must be provided with uploaded image' }),
-          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-
-      actualLat = lat;
-      actualLon = lon;
+      // For image uploads, coordinates are optional
+      // Use dummy coordinates if not provided
+      actualLat = (lat && !isNaN(lat)) ? lat : 0;
+      actualLon = (lon && !isNaN(lon)) ? lon : 0;
       
       // Extract base64 data (remove data URL prefix if present)
       if (imageData.startsWith('data:')) {
@@ -146,7 +140,17 @@ QUALITY CONTROL:
 
 Be precise, conservative, and evidence-based. Do NOT hallucinate detections.`;
 
-    const userPrompt = `Analyze this satellite imagery at coordinates ${actualLat.toFixed(6)}, ${actualLon.toFixed(6)} in India. 
+    const userPrompt = actualLat === 0 && actualLon === 0 
+      ? `Analyze this uploaded satellite imagery for rooftop solar panels in India. 
+
+Determine if rooftop solar panels are present and provide detailed verification data. Consider:
+- Panel geometry and arrangement patterns
+- Roof characteristics and obstacles (water tanks, clotheslines, AC units)
+- Image quality and visibility
+- Confidence in detection
+
+Provide your assessment with evidence-based reasoning.`
+      : `Analyze this satellite imagery at coordinates ${actualLat.toFixed(6)}, ${actualLon.toFixed(6)} in India. 
 
 Determine if rooftop solar panels are present and provide detailed verification data. Consider:
 - Panel geometry and arrangement patterns
