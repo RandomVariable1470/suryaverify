@@ -49,7 +49,35 @@ const Index = () => {
 
       if (error) {
         console.error('Verification error:', error);
-        toast.error(error.message || 'Failed to verify location');
+        
+        // Check for specific payment/credits error
+        if (error?.message?.includes('payment') || error?.message?.includes('credits')) {
+          toast.error('⚠️ Out of AI Credits', {
+            description: 'Please add credits to your workspace: Settings → Workspace → Usage',
+            duration: 8000,
+          });
+        } else {
+          toast.error(error.message || 'Failed to verify location');
+        }
+        
+        setIsVerifying(false);
+        return;
+      }
+
+      // Check if data contains an error (edge function returned error in response body)
+      if (data?.error) {
+        console.error('Verification error:', data.error);
+        
+        // Check for specific payment/credits error
+        if (data.error.includes('payment') || data.error.includes('credits')) {
+          toast.error('⚠️ Out of AI Credits', {
+            description: 'Please add credits to your workspace: Settings → Workspace → Usage',
+            duration: 8000,
+          });
+        } else {
+          toast.error('Verification failed. Please try again.');
+        }
+        
         setIsVerifying(false);
         return;
       }
@@ -112,10 +140,38 @@ const Index = () => {
         });
 
         if (!error && data) {
-          batchResults.push(data);
-          successCount++;
+          // Check if data contains an error (edge function returned error in response body)
+          if (data.error) {
+            console.error('Verification error:', data.error);
+            
+            // Check for specific payment/credits error
+            if (data.error.includes('payment') || data.error.includes('credits')) {
+              setIsVerifying(false);
+              toast.error('⚠️ Out of AI Credits', {
+                description: 'Please add credits to your workspace: Settings → Workspace → Usage',
+                duration: 8000,
+              });
+              return;
+            }
+            
+            failCount++;
+          } else {
+            batchResults.push(data);
+            successCount++;
+          }
         } else {
           console.error('Verification error:', error);
+          
+          // Check for specific payment/credits error in error object
+          if (error?.message?.includes('payment') || error?.message?.includes('credits')) {
+            setIsVerifying(false);
+            toast.error('⚠️ Out of AI Credits', {
+              description: 'Please add credits to your workspace: Settings → Workspace → Usage',
+              duration: 8000,
+            });
+            return;
+          }
+          
           failCount++;
         }
       } catch (err) {
