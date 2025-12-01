@@ -29,6 +29,8 @@ const CoordinateInput = ({ onVerify, onBulkUpload, isLoading }: CoordinateInputP
   const [selectedCoords, setSelectedCoords] = useState<{ lat: number; lon: number } | null>(null);
   const [isMapReady, setIsMapReady] = useState(false);
   const [mapError, setMapError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState("manual");
+  const isInitializing = useRef(false);
   const csvInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -200,12 +202,22 @@ const CoordinateInput = ({ onVerify, onBulkUpload, isLoading }: CoordinateInputP
     setImageLon('');
   };
 
-  // Initialize map in background for instant loading with token caching
+  // Initialize map only when Map Picker tab is selected
   useEffect(() => {
+    if (activeTab !== 'map') return;
+    if (isInitializing.current || mapRef.current) return;
+    
+    isInitializing.current = true;
     let loadTimeout: NodeJS.Timeout;
     
     const initializeMap = async () => {
-      if (!mapContainerRef.current || mapRef.current) return;
+      if (!mapContainerRef.current) {
+        console.error('Map container ref not available');
+        isInitializing.current = false;
+        return;
+      }
+
+      console.log('Starting map initialization...');
 
       try {
         // Set a timeout to prevent infinite loading
@@ -213,8 +225,9 @@ const CoordinateInput = ({ onVerify, onBulkUpload, isLoading }: CoordinateInputP
           if (!isMapReady) {
             setMapError('Map loading timed out. Please try refreshing the page.');
             console.error('Map loading timeout');
+            isInitializing.current = false;
           }
-        }, 15000); // 15 second timeout
+        }, 15000);
 
         // Try to get cached token first
         let mapboxToken = sessionStorage.getItem('mapbox_token');
@@ -226,11 +239,11 @@ const CoordinateInput = ({ onVerify, onBulkUpload, isLoading }: CoordinateInputP
           if (error || !data?.token) {
             console.error('Failed to fetch Mapbox token:', error);
             setMapError('Failed to fetch map token');
+            isInitializing.current = false;
             return;
           }
           
           mapboxToken = data.token;
-          // Cache token for the session
           sessionStorage.setItem('mapbox_token', mapboxToken);
           console.log('Mapbox token cached');
         } else {
@@ -239,10 +252,11 @@ const CoordinateInput = ({ onVerify, onBulkUpload, isLoading }: CoordinateInputP
 
         mapboxgl.accessToken = mapboxToken;
         
+        console.log('Creating Mapbox GL map...');
         const map = new mapboxgl.Map({
           container: mapContainerRef.current,
           style: 'mapbox://styles/mapbox/satellite-streets-v12',
-          center: [78.9629, 20.5937], // Center of India
+          center: [78.9629, 20.5937],
           zoom: 4.5,
           pitch: 0,
         });
@@ -250,7 +264,8 @@ const CoordinateInput = ({ onVerify, onBulkUpload, isLoading }: CoordinateInputP
         map.on('error', (e) => {
           console.error('Mapbox error:', e);
           setMapError('Map failed to load properly');
-          setIsMapReady(true); // Remove loading spinner
+          setIsMapReady(true);
+          isInitializing.current = false;
         });
 
         map.addControl(
@@ -264,7 +279,6 @@ const CoordinateInput = ({ onVerify, onBulkUpload, isLoading }: CoordinateInputP
         map.on('click', (e) => {
           const { lng, lat } = e.lngLat;
           
-          // Validate India bounds
           if (lat < 8 || lat > 37 || lng < 68 || lng > 97) {
             toast.error("Please select a location within India (8-37°N, 68-97°E)");
             return;
@@ -272,12 +286,10 @@ const CoordinateInput = ({ onVerify, onBulkUpload, isLoading }: CoordinateInputP
 
           setSelectedCoords({ lat, lon: lng });
 
-          // Remove existing marker
           if (markerRef.current) {
             markerRef.current.remove();
           }
 
-          // Create custom marker element
           const el = document.createElement('div');
           el.className = 'animate-bounce-in';
           el.style.width = '32px';
@@ -290,7 +302,6 @@ const CoordinateInput = ({ onVerify, onBulkUpload, isLoading }: CoordinateInputP
             .setLngLat([lng, lat])
             .addTo(map);
 
-          // Fly to selected location
           map.flyTo({
             center: [lng, lat],
             zoom: 18,
@@ -304,14 +315,15 @@ const CoordinateInput = ({ onVerify, onBulkUpload, isLoading }: CoordinateInputP
         map.on('load', () => {
           clearTimeout(loadTimeout);
           setIsMapReady(true);
-          console.log('Map preloaded successfully');
+          console.log('Map loaded successfully');
         });
 
         mapRef.current = map;
+        console.log('Map initialization complete');
       } catch (err) {
         console.error('Map initialization error:', err);
         setMapError('Failed to initialize map');
-        toast.error('Failed to initialize map');
+        isInitializing.current = false;
       }
     };
 
@@ -328,8 +340,9 @@ const CoordinateInput = ({ onVerify, onBulkUpload, isLoading }: CoordinateInputP
         mapRef.current.remove();
         mapRef.current = null;
       }
+      isInitializing.current = false;
     };
-  }, []); // Initialize once on mount
+  }, [activeTab, isMapReady]);
 
   const handleMapVerify = () => {
     if (!selectedCoords) {
@@ -349,7 +362,7 @@ const CoordinateInput = ({ onVerify, onBulkUpload, isLoading }: CoordinateInputP
         <p className="text-sm text-muted-foreground">Enter coordinates or upload files</p>
       </div>
 
-      <Tabs defaultValue="manual" className="w-full">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="grid w-full grid-cols-3 mb-6">
           <TabsTrigger value="manual">Manual Entry</TabsTrigger>
           <TabsTrigger value="map">Map Picker</TabsTrigger>
