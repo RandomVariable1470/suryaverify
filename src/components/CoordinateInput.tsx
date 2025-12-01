@@ -200,7 +200,7 @@ const CoordinateInput = ({ onVerify, onBulkUpload, isLoading }: CoordinateInputP
     setImageLon('');
   };
 
-  // Initialize map in background for instant loading
+  // Initialize map in background for instant loading with token caching
   useEffect(() => {
     let loadTimeout: NodeJS.Timeout;
     
@@ -216,15 +216,28 @@ const CoordinateInput = ({ onVerify, onBulkUpload, isLoading }: CoordinateInputP
           }
         }, 15000); // 15 second timeout
 
-        const { data, error } = await supabase.functions.invoke('get-mapbox-token');
+        // Try to get cached token first
+        let mapboxToken = sessionStorage.getItem('mapbox_token');
         
-        if (error || !data?.token) {
-          console.error('Failed to fetch Mapbox token:', error);
-          setMapError('Failed to fetch map token');
-          return;
+        if (!mapboxToken) {
+          console.log('Fetching Mapbox token...');
+          const { data, error } = await supabase.functions.invoke('get-mapbox-token');
+          
+          if (error || !data?.token) {
+            console.error('Failed to fetch Mapbox token:', error);
+            setMapError('Failed to fetch map token');
+            return;
+          }
+          
+          mapboxToken = data.token;
+          // Cache token for the session
+          sessionStorage.setItem('mapbox_token', mapboxToken);
+          console.log('Mapbox token cached');
+        } else {
+          console.log('Using cached Mapbox token');
         }
 
-        mapboxgl.accessToken = data.token;
+        mapboxgl.accessToken = mapboxToken;
         
         const map = new mapboxgl.Map({
           container: mapContainerRef.current,
@@ -328,11 +341,6 @@ const CoordinateInput = ({ onVerify, onBulkUpload, isLoading }: CoordinateInputP
 
   return (
     <Card className="p-8 shadow-[0_2px_8px_hsla(150,15%,20%,0.08)] border border-border rounded-2xl animate-fade-in w-full max-w-2xl">
-      {/* Hidden map container for background preloading */}
-      <div className="absolute opacity-0 pointer-events-none w-0 h-0 overflow-hidden">
-        <div ref={mapContainerRef} className="w-full h-full" />
-      </div>
-
       <div className="text-center space-y-2 mb-6">
         <div className="inline-flex p-3 rounded-xl bg-primary/10 mb-2">
           <MapPin className="w-6 h-6 text-primary" />
@@ -411,8 +419,10 @@ const CoordinateInput = ({ onVerify, onBulkUpload, isLoading }: CoordinateInputP
             </div>
 
             <div className="relative rounded-lg overflow-hidden border-2 border-border">
-              {/* Map displays here via the preloaded container */}
-              <div className="w-full h-[400px] bg-muted mapboxgl-map"></div>
+              <div 
+                ref={mapContainerRef}
+                className="w-full h-[400px] bg-muted"
+              />
               {!isMapReady && !mapError && (
                 <div className="absolute inset-0 flex items-center justify-center bg-background/80 backdrop-blur-sm">
                   <div className="text-center">
