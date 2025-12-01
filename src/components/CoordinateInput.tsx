@@ -1,14 +1,11 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef } from "react";
 import { Card } from "./ui/card";
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { Label } from "./ui/label";
-import { MapPin, Loader2, FileText, Upload, X, Image as ImageIcon, Map } from "lucide-react";
+import { MapPin, Loader2, FileText, Upload, X, Image as ImageIcon } from "lucide-react";
 import { toast } from "sonner";
-import mapboxgl from "mapbox-gl";
-import "mapbox-gl/dist/mapbox-gl.css";
-import { supabase } from "@/integrations/supabase/client";
 
 interface CoordinateInputProps {
   onVerify: (lat: number, lon: number) => void;
@@ -26,16 +23,9 @@ const CoordinateInput = ({ onVerify, onBulkUpload, isLoading }: CoordinateInputP
   const [imageLat, setImageLat] = useState('');
   const [imageLon, setImageLon] = useState('');
   const [isDragging, setIsDragging] = useState(false);
-  const [selectedCoords, setSelectedCoords] = useState<{ lat: number; lon: number } | null>(null);
-  const [isMapReady, setIsMapReady] = useState(false);
-  const [mapError, setMapError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("manual");
-  const isInitializing = useRef(false);
   const csvInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
-  const mapContainerRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<mapboxgl.Map | null>(null);
-  const markerRef = useRef<mapboxgl.Marker | null>(null);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -202,156 +192,6 @@ const CoordinateInput = ({ onVerify, onBulkUpload, isLoading }: CoordinateInputP
     setImageLon('');
   };
 
-  // Initialize map only when Map Picker tab is selected
-  useEffect(() => {
-    if (activeTab !== 'map') return;
-    if (isInitializing.current || mapRef.current) return;
-    
-    isInitializing.current = true;
-    let loadTimeout: NodeJS.Timeout;
-    
-    const initializeMap = async () => {
-      if (!mapContainerRef.current) {
-        console.error('Map container ref not available');
-        isInitializing.current = false;
-        return;
-      }
-
-      console.log('Starting map initialization...');
-
-      try {
-        // Set a timeout to prevent infinite loading
-        loadTimeout = setTimeout(() => {
-          if (!isMapReady) {
-            setMapError('Map loading timed out. Please try refreshing the page.');
-            console.error('Map loading timeout');
-            isInitializing.current = false;
-          }
-        }, 15000);
-
-        // Try to get cached token first
-        let mapboxToken = sessionStorage.getItem('mapbox_token');
-        
-        if (!mapboxToken) {
-          console.log('Fetching Mapbox token...');
-          const { data, error } = await supabase.functions.invoke('get-mapbox-token');
-          
-          if (error || !data?.token) {
-            console.error('Failed to fetch Mapbox token:', error);
-            setMapError('Failed to fetch map token');
-            isInitializing.current = false;
-            return;
-          }
-          
-          mapboxToken = data.token;
-          sessionStorage.setItem('mapbox_token', mapboxToken);
-          console.log('Mapbox token cached');
-        } else {
-          console.log('Using cached Mapbox token');
-        }
-
-        mapboxgl.accessToken = mapboxToken;
-        
-        console.log('Creating Mapbox GL map...');
-        const map = new mapboxgl.Map({
-          container: mapContainerRef.current,
-          style: 'mapbox://styles/mapbox/satellite-streets-v12',
-          center: [78.9629, 20.5937],
-          zoom: 4.5,
-          pitch: 0,
-        });
-
-        map.on('error', (e) => {
-          console.error('Mapbox error:', e);
-          setMapError('Map failed to load properly');
-          setIsMapReady(true);
-          isInitializing.current = false;
-        });
-
-        map.addControl(
-          new mapboxgl.NavigationControl({
-            visualizePitch: false,
-          }),
-          'top-right'
-        );
-
-        // Handle map clicks
-        map.on('click', (e) => {
-          const { lng, lat } = e.lngLat;
-          
-          if (lat < 8 || lat > 37 || lng < 68 || lng > 97) {
-            toast.error("Please select a location within India (8-37°N, 68-97°E)");
-            return;
-          }
-
-          setSelectedCoords({ lat, lon: lng });
-
-          if (markerRef.current) {
-            markerRef.current.remove();
-          }
-
-          const el = document.createElement('div');
-          el.className = 'animate-bounce-in';
-          el.style.width = '32px';
-          el.style.height = '32px';
-          el.style.backgroundImage = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%231a4d2e'%3E%3Cpath d='M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z'/%3E%3C/svg%3E")`;
-          el.style.backgroundSize = 'contain';
-          el.style.cursor = 'pointer';
-
-          markerRef.current = new mapboxgl.Marker({ element: el })
-            .setLngLat([lng, lat])
-            .addTo(map);
-
-          map.flyTo({
-            center: [lng, lat],
-            zoom: 18,
-            duration: 1500,
-            essential: true,
-          });
-
-          toast.success(`Selected: ${lat.toFixed(6)}, ${lng.toFixed(6)}`);
-        });
-
-        map.on('load', () => {
-          clearTimeout(loadTimeout);
-          setIsMapReady(true);
-          console.log('Map loaded successfully');
-        });
-
-        mapRef.current = map;
-        console.log('Map initialization complete');
-      } catch (err) {
-        console.error('Map initialization error:', err);
-        setMapError('Failed to initialize map');
-        isInitializing.current = false;
-      }
-    };
-
-    initializeMap();
-
-    return () => {
-      if (loadTimeout) {
-        clearTimeout(loadTimeout);
-      }
-      if (markerRef.current) {
-        markerRef.current.remove();
-      }
-      if (mapRef.current) {
-        mapRef.current.remove();
-        mapRef.current = null;
-      }
-      isInitializing.current = false;
-    };
-  }, [activeTab, isMapReady]);
-
-  const handleMapVerify = () => {
-    if (!selectedCoords) {
-      toast.error("Please select a location on the map first");
-      return;
-    }
-    onVerify(selectedCoords.lat, selectedCoords.lon);
-  };
-
   return (
     <Card className="p-8 shadow-[0_2px_8px_hsla(150,15%,20%,0.08)] border border-border rounded-2xl animate-fade-in w-full max-w-2xl">
       <div className="text-center space-y-2 mb-6">
@@ -363,9 +203,8 @@ const CoordinateInput = ({ onVerify, onBulkUpload, isLoading }: CoordinateInputP
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-3 mb-6">
+        <TabsList className="grid w-full grid-cols-2 mb-6">
           <TabsTrigger value="manual">Manual Entry</TabsTrigger>
-          <TabsTrigger value="map">Map Picker</TabsTrigger>
           <TabsTrigger value="upload">Upload Files</TabsTrigger>
         </TabsList>
 
@@ -416,80 +255,6 @@ const CoordinateInput = ({ onVerify, onBulkUpload, isLoading }: CoordinateInputP
               )}
             </Button>
           </form>
-        </TabsContent>
-
-        {/* Map Picker Tab */}
-        <TabsContent value="map">
-          <div className="space-y-4">
-            <div className="text-sm text-muted-foreground bg-muted/30 p-3 rounded-lg">
-              <p className="flex items-center gap-2 font-medium mb-1">
-                <Map className="w-4 h-4" />
-                Click anywhere on the map to select coordinates
-              </p>
-              <p className="text-xs">
-                The map will zoom in to your selected location. You can click multiple times to change the selection.
-              </p>
-            </div>
-
-            <div className="relative rounded-lg overflow-hidden border-2 border-border">
-              <div 
-                ref={mapContainerRef}
-                className="w-full h-[400px] bg-muted"
-              />
-              {!isMapReady && !mapError && (
-                <div className="absolute inset-0 flex items-center justify-center bg-background/80 backdrop-blur-sm">
-                  <div className="text-center">
-                    <Loader2 className="w-8 h-8 animate-spin mx-auto mb-2 text-primary" />
-                    <p className="text-sm text-muted-foreground">Loading map...</p>
-                  </div>
-                </div>
-              )}
-              {mapError && (
-                <div className="absolute inset-0 flex items-center justify-center bg-background/80 backdrop-blur-sm">
-                  <div className="text-center max-w-md px-4">
-                    <div className="w-12 h-12 rounded-full bg-destructive/10 flex items-center justify-center mx-auto mb-3">
-                      <X className="w-6 h-6 text-destructive" />
-                    </div>
-                    <p className="text-sm font-medium text-foreground mb-1">Map Load Failed</p>
-                    <p className="text-xs text-muted-foreground">{mapError}</p>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {selectedCoords && (
-              <Card className="p-4 bg-accent/10 border-accent/50">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-xs text-muted-foreground mb-1">Selected Location</p>
-                    <p className="font-mono text-sm font-semibold">
-                      {selectedCoords.lat.toFixed(6)}, {selectedCoords.lon.toFixed(6)}
-                    </p>
-                  </div>
-                  <MapPin className="w-5 h-5 text-primary" />
-                </div>
-              </Card>
-            )}
-
-            <Button
-              type="button"
-              onClick={handleMapVerify}
-              disabled={!selectedCoords || isLoading}
-              className="w-full h-12 text-base font-semibold"
-            >
-              {isLoading ? (
-                <>
-                  <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                  Verifying...
-                </>
-              ) : (
-                <>
-                  <MapPin className="w-5 h-5 mr-2" />
-                  Verify Selected Location
-                </>
-              )}
-            </Button>
-          </div>
         </TabsContent>
 
         {/* Upload Files Tab */}

@@ -1,11 +1,9 @@
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import Header from "@/components/Header";
 import MapView from "@/components/MapView";
 import ResultsPanel from "@/components/ResultsPanel";
 import CoordinateInput from "@/components/CoordinateInput";
 import { VerificationResult } from "@/types/verification";
-import { GroundTruthAnnotation, AnnotationComparison } from "@/types/annotation";
-import * as turf from "@turf/turf";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -14,9 +12,6 @@ const Index = () => {
   const [result, setResult] = useState<VerificationResult | null>(null);
   const [allResults, setAllResults] = useState<VerificationResult[]>([]);
   const [isVerifying, setIsVerifying] = useState(false);
-  const [annotationMode, setAnnotationMode] = useState(false);
-  const [groundTruthAnnotations, setGroundTruthAnnotations] = useState<GroundTruthAnnotation[]>([]);
-  const [showComparison, setShowComparison] = useState(false);
 
   const generateMockResult = (lat: number, lon: number, sample_id?: string | number): VerificationResult => {
     return {
@@ -157,84 +152,6 @@ const Index = () => {
     }
   };
 
-  // Calculate IoU comparison
-  const comparison = useMemo((): AnnotationComparison | null => {
-    if (!result?.detection_polygons || groundTruthAnnotations.length === 0) {
-      return null;
-    }
-
-    try {
-      // Combine all AI detection polygons
-      const aiPolygons = result.detection_polygons.map(p => 
-        turf.polygon(p.coordinates)
-      );
-      const aiUnion = aiPolygons.length > 1 
-        ? turf.union(turf.featureCollection(aiPolygons))
-        : aiPolygons[0];
-      
-      // Combine all ground truth polygons
-      const gtPolygons = groundTruthAnnotations.map(a => 
-        turf.polygon(a.coordinates)
-      );
-      const gtUnion = gtPolygons.length > 1
-        ? turf.union(turf.featureCollection(gtPolygons))
-        : gtPolygons[0];
-
-      if (!aiUnion || !gtUnion) return null;
-
-      const aiArea = turf.area(aiUnion);
-      const gtArea = turf.area(gtUnion);
-
-      // Calculate intersection
-      const intersection = turf.intersect(turf.featureCollection([aiUnion, gtUnion]));
-      const overlapArea = intersection ? turf.area(intersection) : 0;
-
-      // IoU = Intersection / Union
-      const unionArea = aiArea + gtArea - overlapArea;
-      const iou = overlapArea / unionArea;
-
-      let agreement_status: 'match' | 'partial' | 'mismatch' | 'missing';
-      if (iou > 0.7) agreement_status = 'match';
-      else if (iou > 0.4) agreement_status = 'partial';
-      else agreement_status = 'mismatch';
-
-      return {
-        ai_area_sqm: aiArea,
-        ground_truth_area_sqm: gtArea,
-        iou_score: iou,
-        agreement_status,
-        overlap_area_sqm: overlapArea
-      };
-    } catch (err) {
-      console.error('Comparison calculation error:', err);
-      return null;
-    }
-  }, [result, groundTruthAnnotations]);
-
-  const handleToggleAnnotationMode = () => {
-    setAnnotationMode(!annotationMode);
-    if (annotationMode) {
-      toast.success("Annotation mode disabled");
-    } else {
-      toast.success("Annotation mode enabled - draw on the map");
-    }
-  };
-
-  const handleAnnotationsChange = (annotations: GroundTruthAnnotation[]) => {
-    setGroundTruthAnnotations(annotations);
-  };
-
-  const handleUpdateAnnotation = (id: string, updates: Partial<GroundTruthAnnotation>) => {
-    setGroundTruthAnnotations(prev => 
-      prev.map(a => a.id === id ? { ...a, ...updates } : a)
-    );
-  };
-
-  const handleDeleteAnnotation = (id: string) => {
-    setGroundTruthAnnotations(prev => prev.filter(a => a.id !== id));
-    toast.success("Annotation deleted");
-  };
-
   const handleExport = () => {
     if (allResults.length === 0) {
       toast.error("No results to export");
@@ -358,11 +275,6 @@ const Index = () => {
             <MapView 
               coordinates={coordinates} 
               detectionPolygons={result?.detection_polygons}
-              annotationMode={annotationMode}
-              onAnnotationsChange={handleAnnotationsChange}
-              groundTruthAnnotations={groundTruthAnnotations}
-              showComparison={showComparison}
-              onToggleComparison={() => setShowComparison(!showComparison)}
             />
           </div>
 
@@ -371,12 +283,6 @@ const Index = () => {
             <ResultsPanel 
               result={result} 
               isLoading={isVerifying}
-              annotationMode={annotationMode}
-              onToggleAnnotationMode={handleToggleAnnotationMode}
-              groundTruthAnnotations={groundTruthAnnotations}
-              comparison={comparison}
-              onUpdateAnnotation={handleUpdateAnnotation}
-              onDeleteAnnotation={handleDeleteAnnotation}
             />
           </div>
         </div>
