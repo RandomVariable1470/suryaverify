@@ -200,7 +200,7 @@ const CoordinateInput = ({ onVerify, onBulkUpload, isLoading }: CoordinateInputP
     setImageLon('');
   };
 
-  // Initialize map for map picker
+  // Initialize map in background for instant loading
   useEffect(() => {
     let loadTimeout: NodeJS.Timeout;
     
@@ -212,7 +212,7 @@ const CoordinateInput = ({ onVerify, onBulkUpload, isLoading }: CoordinateInputP
         loadTimeout = setTimeout(() => {
           if (!isMapReady) {
             setMapError('Map loading timed out. Please try refreshing the page.');
-            toast.error('Map failed to load');
+            console.error('Map loading timeout');
           }
         }, 15000); // 15 second timeout
 
@@ -221,7 +221,6 @@ const CoordinateInput = ({ onVerify, onBulkUpload, isLoading }: CoordinateInputP
         if (error || !data?.token) {
           console.error('Failed to fetch Mapbox token:', error);
           setMapError('Failed to fetch map token');
-          toast.error('Could not load map token');
           return;
         }
 
@@ -292,6 +291,7 @@ const CoordinateInput = ({ onVerify, onBulkUpload, isLoading }: CoordinateInputP
         map.on('load', () => {
           clearTimeout(loadTimeout);
           setIsMapReady(true);
+          console.log('Map preloaded successfully');
         });
 
         mapRef.current = map;
@@ -316,7 +316,7 @@ const CoordinateInput = ({ onVerify, onBulkUpload, isLoading }: CoordinateInputP
         mapRef.current = null;
       }
     };
-  }, [isMapReady]);
+  }, []); // Initialize once on mount
 
   const handleMapVerify = () => {
     if (!selectedCoords) {
@@ -328,6 +328,11 @@ const CoordinateInput = ({ onVerify, onBulkUpload, isLoading }: CoordinateInputP
 
   return (
     <Card className="p-8 shadow-[0_2px_8px_hsla(150,15%,20%,0.08)] border border-border rounded-2xl animate-fade-in w-full max-w-2xl">
+      {/* Hidden map container for background preloading */}
+      <div className="absolute opacity-0 pointer-events-none w-0 h-0 overflow-hidden">
+        <div ref={mapContainerRef} className="w-full h-full" />
+      </div>
+
       <div className="text-center space-y-2 mb-6">
         <div className="inline-flex p-3 rounded-xl bg-primary/10 mb-2">
           <MapPin className="w-6 h-6 text-primary" />
@@ -406,10 +411,8 @@ const CoordinateInput = ({ onVerify, onBulkUpload, isLoading }: CoordinateInputP
             </div>
 
             <div className="relative rounded-lg overflow-hidden border-2 border-border">
-              <div 
-                ref={mapContainerRef} 
-                className="w-full h-[400px] bg-muted"
-              />
+              {/* Map displays here via the preloaded container */}
+              <div className="w-full h-[400px] bg-muted mapboxgl-map"></div>
               {!isMapReady && !mapError && (
                 <div className="absolute inset-0 flex items-center justify-center bg-background/80 backdrop-blur-sm">
                   <div className="text-center">
