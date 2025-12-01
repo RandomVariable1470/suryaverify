@@ -11,6 +11,7 @@ const Index = () => {
   const [coordinates, setCoordinates] = useState<{ lat: number; lon: number } | null>(null);
   const [result, setResult] = useState<VerificationResult | null>(null);
   const [allResults, setAllResults] = useState<VerificationResult[]>([]);
+  const [currentResultIndex, setCurrentResultIndex] = useState<number>(0);
   const [isVerifying, setIsVerifying] = useState(false);
 
   const generateMockResult = (lat: number, lon: number, sample_id?: string | number): VerificationResult => {
@@ -56,7 +57,8 @@ const Index = () => {
       }
 
       setResult(data);
-      setAllResults(prev => [...prev, data]);
+      setAllResults([data]);
+      setCurrentResultIndex(0);
       toast.success(data.has_solar ? 'Solar panels detected!' : 'No solar panels found');
     } catch (err) {
       console.error('Verification failed:', err);
@@ -69,53 +71,12 @@ const Index = () => {
   const handleBulkUpload = async (coords: Array<{ lat: number; lon: number; sample_id?: string; imageData?: string }>) => {
     toast.info(`Processing ${coords.length} location${coords.length > 1 ? 's' : ''}...`);
     
-    // Process first location immediately to show on map
-    if (coords.length > 0) {
-      const firstCoord = coords[0];
-      if (firstCoord.imageData) {
-        // Direct image upload - call edge function with imageData
-        setIsVerifying(true);
-        setCoordinates({ lat: firstCoord.lat, lon: firstCoord.lon });
-        
-        try {
-          const { data, error } = await supabase.functions.invoke('verify-solar', {
-            body: { 
-              lat: firstCoord.lat, 
-              lon: firstCoord.lon,
-              imageData: firstCoord.imageData,
-              sample_id: firstCoord.sample_id 
-            }
-          });
-
-          if (error) {
-            console.error('Image verification error:', error);
-            toast.error('Failed to analyze uploaded image');
-            setIsVerifying(false);
-            return;
-          }
-
-          if (data) {
-            setResult(data);
-            setAllResults(prev => [...prev, data]);
-            toast.success(data.has_solar ? 'Solar panels detected in image!' : 'No solar panels found in image');
-          }
-        } catch (err) {
-          console.error('Image verification failed:', err);
-          toast.error('Image verification failed. Please try again.');
-        } finally {
-          setIsVerifying(false);
-        }
-      } else {
-        // Regular coordinate-based verification
-        handleVerify(firstCoord.lat, firstCoord.lon);
-      }
-    }
-
-    // Process remaining locations in background (for CSV uploads)
+    const batchResults: VerificationResult[] = [];
     let successCount = 0;
     let failCount = 0;
 
-    for (let i = 1; i < coords.length; i++) {
+    // Process all locations
+    for (let i = 0; i < coords.length; i++) {
       try {
         const coord = coords[i];
         const body: any = { 
@@ -128,12 +89,13 @@ const Index = () => {
           body.imageData = coord.imageData;
         }
 
+        setIsVerifying(true);
         const { data, error } = await supabase.functions.invoke('verify-solar', {
           body
         });
 
         if (!error && data) {
-          setAllResults(prev => [...prev, data]);
+          batchResults.push(data);
           successCount++;
         } else {
           failCount++;
@@ -144,11 +106,43 @@ const Index = () => {
       }
     }
 
-    if (successCount > 0) {
-      toast.success(`Completed ${successCount} verifications successfully`);
+    setIsVerifying(false);
+
+    if (batchResults.length > 0) {
+      setAllResults(batchResults);
+      setCurrentResultIndex(0);
+      setResult(batchResults[0]);
+      setCoordinates({ lat: batchResults[0].lat, lon: batchResults[0].lon });
+      toast.success(`Completed ${successCount} of ${coords.length} verifications`);
     }
+    
     if (failCount > 0) {
       toast.error(`${failCount} verifications failed`);
+    }
+  };
+
+  const handleReset = () => {
+    setCoordinates(null);
+    setResult(null);
+    setAllResults([]);
+    setCurrentResultIndex(0);
+  };
+
+  const handleNextResult = () => {
+    if (currentResultIndex < allResults.length - 1) {
+      const newIndex = currentResultIndex + 1;
+      setCurrentResultIndex(newIndex);
+      setResult(allResults[newIndex]);
+      setCoordinates({ lat: allResults[newIndex].lat, lon: allResults[newIndex].lon });
+    }
+  };
+
+  const handlePrevResult = () => {
+    if (currentResultIndex > 0) {
+      const newIndex = currentResultIndex - 1;
+      setCurrentResultIndex(newIndex);
+      setResult(allResults[newIndex]);
+      setCoordinates({ lat: allResults[newIndex].lat, lon: allResults[newIndex].lon });
     }
   };
 
@@ -283,6 +277,11 @@ const Index = () => {
             <ResultsPanel 
               result={result} 
               isLoading={isVerifying}
+              allResults={allResults}
+              currentResultIndex={currentResultIndex}
+              onNext={handleNextResult}
+              onPrev={handlePrevResult}
+              onReset={handleReset}
             />
           </div>
         </div>

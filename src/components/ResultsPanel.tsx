@@ -1,4 +1,4 @@
-import { CheckCircle2, XCircle, AlertCircle, Download, MapPin, Image as ImageIcon } from "lucide-react";
+import { CheckCircle2, XCircle, AlertCircle, Download, MapPin, Image as ImageIcon, ChevronLeft, ChevronRight, RotateCcw } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "./ui/card";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
@@ -9,11 +9,21 @@ import { toast } from "sonner";
 interface ResultsPanelProps {
   result: VerificationResult | null;
   isLoading: boolean;
+  allResults?: VerificationResult[];
+  currentResultIndex?: number;
+  onNext?: () => void;
+  onPrev?: () => void;
+  onReset?: () => void;
 }
 
 const ResultsPanel = ({ 
   result, 
-  isLoading
+  isLoading,
+  allResults = [],
+  currentResultIndex = 0,
+  onNext,
+  onPrev,
+  onReset
 }: ResultsPanelProps) => {
   const handleExportResult = () => {
     if (!result) return;
@@ -109,8 +119,46 @@ const ResultsPanel = ({
   const isVerifiable = result.qc_status === "VERIFIABLE";
   const hasSolar = result.has_solar;
 
+  const hasBatchResults = allResults.length > 1;
+
   return (
     <div className="p-6 space-y-4">
+      {/* Batch Navigation Bar */}
+      {hasBatchResults && (
+        <div className="flex items-center justify-between p-4 bg-secondary/30 rounded-xl border border-border">
+          <Button
+            onClick={onPrev}
+            disabled={currentResultIndex === 0}
+            variant="outline"
+            size="sm"
+            className="gap-2"
+          >
+            <ChevronLeft className="w-4 h-4" />
+            Previous
+          </Button>
+          
+          <div className="text-center">
+            <p className="text-sm font-medium text-foreground">
+              Result {currentResultIndex + 1} of {allResults.length}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {allResults.filter(r => r.has_solar).length} with solar detected
+            </p>
+          </div>
+          
+          <Button
+            onClick={onNext}
+            disabled={currentResultIndex === allResults.length - 1}
+            variant="outline"
+            size="sm"
+            className="gap-2"
+          >
+            Next
+            <ChevronRight className="w-4 h-4" />
+          </Button>
+        </div>
+      )}
+
       {/* Card 1: Verification Summary */}
       <Card className="shadow-[0_2px_8px_hsla(150,15%,20%,0.08)] dark:shadow-[0_2px_8px_hsla(0,0%,0%,0.3)] border border-border animate-fade-in rounded-2xl">
         <CardHeader className="pb-4">
@@ -247,6 +295,20 @@ const ResultsPanel = ({
           >
             <Download className="w-4 h-4" />
             Download Audit Package
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* New Verification Button */}
+      <Card className="shadow-[0_2px_8px_hsla(150,15%,20%,0.08)] dark:shadow-[0_2px_8px_hsla(0,0%,0%,0.3)] border border-border animate-fade-in rounded-2xl" style={{ animationDelay: "0.5s" }}>
+        <CardContent className="pt-6">
+          <Button 
+            onClick={onReset}
+            variant="default"
+            className="w-full gap-2"
+          >
+            <RotateCcw className="w-4 h-4" />
+            New Verification
           </Button>
         </CardContent>
       </Card>
