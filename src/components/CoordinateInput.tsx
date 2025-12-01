@@ -3,7 +3,6 @@ import { Card } from "./ui/card";
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
-import { Label } from "./ui/label";
 import { MapPin, Loader2, FileText, Upload, X, Image as ImageIcon } from "lucide-react";
 import { toast } from "sonner";
 
@@ -20,8 +19,6 @@ const CoordinateInput = ({ onVerify, onBulkUpload, isLoading }: CoordinateInputP
   const [file, setFile] = useState<File | null>(null);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
-  const [imageLat, setImageLat] = useState('');
-  const [imageLon, setImageLon] = useState('');
   const [isDragging, setIsDragging] = useState(false);
   const [activeTab, setActiveTab] = useState("manual");
   const csvInputRef = useRef<HTMLInputElement>(null);
@@ -151,28 +148,15 @@ const CoordinateInput = ({ onVerify, onBulkUpload, isLoading }: CoordinateInputP
         toast.error("Failed to parse CSV file");
       }
     } else {
-      if (!imageFile || !imageLat || !imageLon) {
-        toast.error("Please provide image and coordinates");
-        return;
-      }
-
-      const lat = parseFloat(imageLat);
-      const lon = parseFloat(imageLon);
-
-      if (isNaN(lat) || isNaN(lon)) {
-        toast.error("Invalid coordinates");
-        return;
-      }
-
-      if (lat < 8 || lat > 37 || lon < 68 || lon > 97) {
-        toast.error("Coordinates must be within India (8-37°N, 68-97°E)");
+      if (!imageFile) {
+        toast.error("Please select an image");
         return;
       }
 
       const reader = new FileReader();
       reader.onload = async (e) => {
         const imageData = e.target?.result as string;
-        onBulkUpload([{ lat, lon, imageData } as any]);
+        onBulkUpload([{ lat: 0, lon: 0, imageData } as any]);
         toast.success("Analyzing uploaded image...");
         resetImageMode();
       };
@@ -188,8 +172,6 @@ const CoordinateInput = ({ onVerify, onBulkUpload, isLoading }: CoordinateInputP
   const resetImageMode = () => {
     setImageFile(null);
     setImagePreview(null);
-    setImageLat('');
-    setImageLon('');
   };
 
   return (
@@ -386,44 +368,11 @@ const CoordinateInput = ({ onVerify, onBulkUpload, isLoading }: CoordinateInputP
                   )}
                 </div>
 
-                {imagePreview && (
-                  <div className="space-y-3">
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-1.5">
-                        <Label htmlFor="img-lat" className="text-xs">Latitude</Label>
-                        <Input
-                          id="img-lat"
-                          type="number"
-                          step="0.000001"
-                          placeholder="e.g. 28.6139"
-                          value={imageLat}
-                          onChange={(e) => setImageLat(e.target.value)}
-                          className="h-9"
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label htmlFor="img-lon" className="text-xs">Longitude</Label>
-                        <Input
-                          id="img-lon"
-                          type="number"
-                          step="0.000001"
-                          placeholder="e.g. 77.2090"
-                          value={imageLon}
-                          onChange={(e) => setImageLon(e.target.value)}
-                          className="h-9"
-                        />
-                      </div>
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      Provide coordinates for this satellite image location
-                    </p>
-                  </div>
-                )}
 
                 <div className="text-xs text-muted-foreground space-y-1 bg-muted/30 p-3 rounded-lg">
-                  <p>• Upload existing satellite imagery for analysis</p>
+                  <p>• Upload satellite imagery for AI-powered solar detection</p>
                   <p>• Supported formats: PNG, JPG, WEBP</p>
-                  <p>• Provide lat/lon coordinates for the image center</p>
+                  <p>• No coordinates needed - AI analyzes the image directly</p>
                 </div>
               </TabsContent>
             </Tabs>
@@ -431,7 +380,7 @@ const CoordinateInput = ({ onVerify, onBulkUpload, isLoading }: CoordinateInputP
             <Button
               type="button"
               onClick={handleUpload}
-              disabled={uploadMode === 'csv' ? !file : !imageFile || !imageLat || !imageLon}
+              disabled={uploadMode === 'csv' ? !file : !imageFile}
               className="w-full h-12 text-base font-semibold"
             >
               {uploadMode === 'csv' ? (

@@ -13,6 +13,7 @@ const Index = () => {
   const [allResults, setAllResults] = useState<VerificationResult[]>([]);
   const [currentResultIndex, setCurrentResultIndex] = useState<number>(0);
   const [isVerifying, setIsVerifying] = useState(false);
+  const [isImageBased, setIsImageBased] = useState(false);
 
   const generateMockResult = (lat: number, lon: number, sample_id?: string | number): VerificationResult => {
     return {
@@ -69,27 +70,33 @@ const Index = () => {
   };
 
   const handleBulkUpload = async (coords: Array<{ lat: number; lon: number; sample_id?: string; imageData?: string }>) => {
+    const isImage = coords[0]?.imageData !== undefined;
+    setIsImageBased(isImage);
+    
     toast.info(`Processing ${coords.length} location${coords.length > 1 ? 's' : ''}...`);
     
     const batchResults: VerificationResult[] = [];
     let successCount = 0;
     let failCount = 0;
 
+    setIsVerifying(true);
+
     // Process all locations
     for (let i = 0; i < coords.length; i++) {
       try {
         const coord = coords[i];
-        const body: any = { 
-          lat: coord.lat, 
-          lon: coord.lon,
-          sample_id: coord.sample_id 
-        };
+        const body: any = {};
         
         if (coord.imageData) {
           body.imageData = coord.imageData;
+        } else {
+          body.lat = coord.lat;
+          body.lon = coord.lon;
+          if (coord.sample_id) {
+            body.sample_id = coord.sample_id;
+          }
         }
 
-        setIsVerifying(true);
         const { data, error } = await supabase.functions.invoke('verify-solar', {
           body
         });
@@ -97,7 +104,9 @@ const Index = () => {
         if (!error && data) {
           batchResults.push(data);
           successCount++;
+          toast.info(`Processed ${successCount} of ${coords.length}...`);
         } else {
+          console.error('Verification error:', error);
           failCount++;
         }
       } catch (err) {
@@ -112,7 +121,9 @@ const Index = () => {
       setAllResults(batchResults);
       setCurrentResultIndex(0);
       setResult(batchResults[0]);
-      setCoordinates({ lat: batchResults[0].lat, lon: batchResults[0].lon });
+      if (!isImage) {
+        setCoordinates({ lat: batchResults[0].lat, lon: batchResults[0].lon });
+      }
       toast.success(`Completed ${successCount} of ${coords.length} verifications`);
     }
     
@@ -126,6 +137,7 @@ const Index = () => {
     setResult(null);
     setAllResults([]);
     setCurrentResultIndex(0);
+    setIsImageBased(false);
   };
 
   const handleNextResult = () => {
@@ -133,7 +145,9 @@ const Index = () => {
       const newIndex = currentResultIndex + 1;
       setCurrentResultIndex(newIndex);
       setResult(allResults[newIndex]);
-      setCoordinates({ lat: allResults[newIndex].lat, lon: allResults[newIndex].lon });
+      if (!isImageBased) {
+        setCoordinates({ lat: allResults[newIndex].lat, lon: allResults[newIndex].lon });
+      }
     }
   };
 
@@ -142,7 +156,9 @@ const Index = () => {
       const newIndex = currentResultIndex - 1;
       setCurrentResultIndex(newIndex);
       setResult(allResults[newIndex]);
-      setCoordinates({ lat: allResults[newIndex].lat, lon: allResults[newIndex].lon });
+      if (!isImageBased) {
+        setCoordinates({ lat: allResults[newIndex].lat, lon: allResults[newIndex].lon });
+      }
     }
   };
 
@@ -262,18 +278,20 @@ const Index = () => {
           />
         </div>
       ) : (
-        /* Screen 2: Results View (Split Pane) */
+        /* Screen 2: Results View (Split Pane or Full Results) */
         <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
-          {/* Left Pane - Map View (60-65% width) */}
-          <div className="lg:w-[63%] h-[50vh] lg:h-full relative border-b lg:border-b-0 lg:border-r border-border">
-            <MapView 
-              coordinates={coordinates} 
-              detectionPolygons={result?.detection_polygons}
-            />
-          </div>
+          {/* Left Pane - Map View (only for coordinate-based analysis) */}
+          {!isImageBased && coordinates && (
+            <div className="lg:w-[63%] h-[50vh] lg:h-full relative border-b lg:border-b-0 lg:border-r border-border">
+              <MapView 
+                coordinates={coordinates} 
+                detectionPolygons={result?.detection_polygons}
+              />
+            </div>
+          )}
 
-          {/* Right Pane - Results (35-40% width) */}
-          <div className="lg:w-[37%] h-[50vh] lg:h-full overflow-y-auto bg-background">
+          {/* Right Pane - Results */}
+          <div className={`${isImageBased ? 'w-full' : 'lg:w-[37%]'} h-[50vh] lg:h-full overflow-y-auto bg-background`}>
             <ResultsPanel 
               result={result} 
               isLoading={isVerifying}
