@@ -28,6 +28,7 @@ const CoordinateInput = ({ onVerify, onBulkUpload, isLoading }: CoordinateInputP
   const [isDragging, setIsDragging] = useState(false);
   const [selectedCoords, setSelectedCoords] = useState<{ lat: number; lon: number } | null>(null);
   const [isMapReady, setIsMapReady] = useState(false);
+  const [mapError, setMapError] = useState<string | null>(null);
   const csvInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -201,14 +202,26 @@ const CoordinateInput = ({ onVerify, onBulkUpload, isLoading }: CoordinateInputP
 
   // Initialize map for map picker
   useEffect(() => {
+    let loadTimeout: NodeJS.Timeout;
+    
     const initializeMap = async () => {
       if (!mapContainerRef.current || mapRef.current) return;
 
       try {
+        // Set a timeout to prevent infinite loading
+        loadTimeout = setTimeout(() => {
+          if (!isMapReady) {
+            setMapError('Map loading timed out. Please try refreshing the page.');
+            toast.error('Map failed to load');
+          }
+        }, 15000); // 15 second timeout
+
         const { data, error } = await supabase.functions.invoke('get-mapbox-token');
         
         if (error || !data?.token) {
           console.error('Failed to fetch Mapbox token:', error);
+          setMapError('Failed to fetch map token');
+          toast.error('Could not load map token');
           return;
         }
 
@@ -220,6 +233,12 @@ const CoordinateInput = ({ onVerify, onBulkUpload, isLoading }: CoordinateInputP
           center: [78.9629, 20.5937], // Center of India
           zoom: 4.5,
           pitch: 0,
+        });
+
+        map.on('error', (e) => {
+          console.error('Mapbox error:', e);
+          setMapError('Map failed to load properly');
+          setIsMapReady(true); // Remove loading spinner
         });
 
         map.addControl(
@@ -271,12 +290,14 @@ const CoordinateInput = ({ onVerify, onBulkUpload, isLoading }: CoordinateInputP
         });
 
         map.on('load', () => {
+          clearTimeout(loadTimeout);
           setIsMapReady(true);
         });
 
         mapRef.current = map;
       } catch (err) {
         console.error('Map initialization error:', err);
+        setMapError('Failed to initialize map');
         toast.error('Failed to initialize map');
       }
     };
@@ -284,6 +305,9 @@ const CoordinateInput = ({ onVerify, onBulkUpload, isLoading }: CoordinateInputP
     initializeMap();
 
     return () => {
+      if (loadTimeout) {
+        clearTimeout(loadTimeout);
+      }
       if (markerRef.current) {
         markerRef.current.remove();
       }
@@ -292,7 +316,7 @@ const CoordinateInput = ({ onVerify, onBulkUpload, isLoading }: CoordinateInputP
         mapRef.current = null;
       }
     };
-  }, []);
+  }, [isMapReady]);
 
   const handleMapVerify = () => {
     if (!selectedCoords) {
@@ -386,11 +410,22 @@ const CoordinateInput = ({ onVerify, onBulkUpload, isLoading }: CoordinateInputP
                 ref={mapContainerRef} 
                 className="w-full h-[400px] bg-muted"
               />
-              {!isMapReady && (
+              {!isMapReady && !mapError && (
                 <div className="absolute inset-0 flex items-center justify-center bg-background/80 backdrop-blur-sm">
                   <div className="text-center">
                     <Loader2 className="w-8 h-8 animate-spin mx-auto mb-2 text-primary" />
                     <p className="text-sm text-muted-foreground">Loading map...</p>
+                  </div>
+                </div>
+              )}
+              {mapError && (
+                <div className="absolute inset-0 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+                  <div className="text-center max-w-md px-4">
+                    <div className="w-12 h-12 rounded-full bg-destructive/10 flex items-center justify-center mx-auto mb-3">
+                      <X className="w-6 h-6 text-destructive" />
+                    </div>
+                    <p className="text-sm font-medium text-foreground mb-1">Map Load Failed</p>
+                    <p className="text-xs text-muted-foreground">{mapError}</p>
                   </div>
                 </div>
               )}
