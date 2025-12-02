@@ -6,7 +6,9 @@ import CoordinateInput from "@/components/CoordinateInput";
 import VerificationProgress from "@/components/VerificationProgress";
 import { VerificationResult } from "@/types/verification";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
+import { fetchSatelliteImage } from "@/services/mapboxService";
+import { analyzeSolarPotential } from "@/services/inferenceService";
+import { exportResults, exportBatchToZip } from "@/services/exportService";
 
 const Index = () => {
   const [coordinates, setCoordinates] = useState<{ lat: number; lon: number } | null>(null);
@@ -40,58 +42,31 @@ const Index = () => {
     setIsVerifying(true);
     setVerificationProgress({ current: 0, total: 1 });
     setCoordinates({ lat, lon });
-    
+
     try {
-      // Call AI-powered verification edge function
-      const { data, error } = await supabase.functions.invoke('verify-solar', {
-        body: { lat, lon }
-      });
+      let base64Image: string;
 
-      if (error) {
-        console.error('Verification error:', error);
-        
-        // Check for specific payment/credits error
-        if (error?.message?.includes('payment') || error?.message?.includes('credits')) {
-          toast.error('⚠️ Out of AI Credits', {
-            description: 'Please add credits to your workspace: Settings → Workspace → Usage',
-            duration: 8000,
-          });
-        } else {
-          toast.error(error.message || 'Failed to verify location');
-        }
-        
+      // 1. Fetch Satellite Image
+      try {
+        base64Image = await fetchSatelliteImage(lat, lon);
+      } catch (error) {
+        console.error('Mapbox error:', error);
+        toast.error('Failed to fetch satellite imagery. Check your Mapbox token.');
         setIsVerifying(false);
         return;
       }
 
-      // Check if data contains an error (edge function returned error in response body)
-      if (data?.error) {
-        console.error('Verification error:', data.error);
-        
-        // Check for specific payment/credits error
-        if (data.error.includes('payment') || data.error.includes('credits')) {
-          toast.error('⚠️ Out of AI Credits', {
-            description: 'Please add credits to your workspace: Settings → Workspace → Usage',
-            duration: 8000,
-          });
-        } else {
-          toast.error('Verification failed. Please try again.');
-        }
-        
-        setIsVerifying(false);
-        return;
+      // 2. Analyze with Gemini
+      try {
+        const data = await analyzeSolarPotential(base64Image, lat, lon);
+        setResult(data);
+        setAllResults([data]);
+        setCurrentResultIndex(0);
+        toast.success(data.has_solar ? 'Solar panels detected!' : 'No solar panels found');
+      } catch (error) {
+        console.error('Gemini error:', error);
+        toast.error('AI analysis failed. Check your Gemini API key.');
       }
-
-      if (!data) {
-        toast.error('No data returned from verification');
-        setIsVerifying(false);
-        return;
-      }
-
-      setResult(data);
-      setAllResults([data]);
-      setCurrentResultIndex(0);
-      toast.success(data.has_solar ? 'Solar panels detected!' : 'No solar panels found');
     } catch (err) {
       console.error('Verification failed:', err);
       toast.error('Verification failed. Please try again.');
@@ -104,76 +79,50 @@ const Index = () => {
   const handleBulkUpload = async (coords: Array<{ lat: number; lon: number; sample_id?: string; imageData?: string }>) => {
     const isImage = coords[0]?.imageData !== undefined;
     setIsImageBased(isImage);
-    
+
     // Set loading state IMMEDIATELY before any async operations
     setIsVerifying(true);
     setVerificationProgress({ current: 0, total: coords.length });
-    
+
     // Show the loading screen for a moment before processing
     await new Promise(resolve => setTimeout(resolve, 100));
-    
+
     toast.info(`Processing ${coords.length} location${coords.length > 1 ? 's' : ''}...`);
-    
+
     const batchResults: VerificationResult[] = [];
     let successCount = 0;
     let failCount = 0;
 
     // Process all locations
     for (let i = 0; i < coords.length; i++) {
-      setVerificationProgress({ current: i, total: coords.length });
+      setVerificationProgress({ current: i + 1, total: coords.length }); // Update progress to i+1
       try {
         const coord = coords[i];
-        const body: any = {};
-        
+        let base64Image: string;
+        let lat = coord.lat;
+        let lon = coord.lon;
+
         if (coord.imageData) {
-          body.imageData = coord.imageData;
+          // Direct image upload
+          base64Image = coord.imageData.startsWith('data:') ? coord.imageData.split(',')[1] : coord.imageData;
+          // Use dummy coordinates if not provided (or keep 0,0)
+          lat = lat || 0;
+          lon = lon || 0;
         } else {
-          body.lat = coord.lat;
-          body.lon = coord.lon;
-          if (coord.sample_id) {
-            body.sample_id = coord.sample_id;
-          }
-        }
-
-        const { data, error } = await supabase.functions.invoke('verify-solar', {
-          body
-        });
-
-        if (!error && data) {
-          // Check if data contains an error (edge function returned error in response body)
-          if (data.error) {
-            console.error('Verification error:', data.error);
-            
-            // Check for specific payment/credits error
-            if (data.error.includes('payment') || data.error.includes('credits')) {
-              setIsVerifying(false);
-              toast.error('⚠️ Out of AI Credits', {
-                description: 'Please add credits to your workspace: Settings → Workspace → Usage',
-                duration: 8000,
-              });
-              return;
-            }
-            
+          // Fetch from Mapbox
+          try {
+            base64Image = await fetchSatelliteImage(lat, lon);
+          } catch (e) {
+            console.error(`Failed to fetch image for ${lat}, ${lon}`, e);
             failCount++;
-          } else {
-            batchResults.push(data);
-            successCount++;
+            continue;
           }
-        } else {
-          console.error('Verification error:', error);
-          
-          // Check for specific payment/credits error in error object
-          if (error?.message?.includes('payment') || error?.message?.includes('credits')) {
-            setIsVerifying(false);
-            toast.error('⚠️ Out of AI Credits', {
-              description: 'Please add credits to your workspace: Settings → Workspace → Usage',
-              duration: 8000,
-            });
-            return;
-          }
-          
-          failCount++;
         }
+
+        const data = await analyzeSolarPotential(base64Image, lat, lon, coord.sample_id);
+        batchResults.push(data);
+        successCount++;
+
       } catch (err) {
         console.error('Bulk verification error:', err);
         failCount++;
@@ -192,7 +141,7 @@ const Index = () => {
       }
       toast.success(`Completed ${successCount} of ${coords.length} verifications`);
     }
-    
+
     if (failCount > 0) {
       toast.error(`${failCount} verifications failed`);
     }
@@ -234,96 +183,13 @@ const Index = () => {
       return;
     }
 
-    // Check if we should export GeoJSON or regular JSON
-    const hasDetectionPolygons = allResults.some(r => r.detection_polygons && r.detection_polygons.length > 0);
-    
-    if (hasDetectionPolygons) {
-      // Export as GeoJSON FeatureCollection
-      const features: any[] = [];
-      
-      allResults.forEach((result) => {
-        if (!result.detection_polygons || result.detection_polygons.length === 0) {
-          // Include location point even if no detections
-          features.push({
-            type: "Feature",
-            id: `verification_${result.sample_id}`,
-            geometry: {
-              type: "Point",
-              coordinates: [result.lon, result.lat]
-            },
-            properties: {
-              sample_id: result.sample_id,
-              has_solar: result.has_solar,
-              confidence: result.confidence,
-              qc_status: result.qc_status,
-              verification_type: "no_detection"
-            }
-          });
-        } else {
-          result.detection_polygons.forEach((polygon, idx) => {
-            features.push({
-              type: "Feature",
-              id: `detection_${result.sample_id}_${idx + 1}`,
-              geometry: {
-                type: polygon.type,
-                coordinates: polygon.coordinates
-              },
-              properties: {
-                sample_id: result.sample_id,
-                zone_id: idx + 1,
-                center_lat: result.lat,
-                center_lon: result.lon,
-                has_solar: result.has_solar,
-                overall_confidence: result.confidence,
-                zone_confidence: polygon.confidence,
-                panel_count: result.panel_count_est,
-                pv_area_sqm: result.pv_area_sqm_est,
-                capacity_kw: result.capacity_kw_est,
-                qc_status: result.qc_status,
-                verification_type: "solar_detection",
-                detection_method: "AI-powered satellite imagery analysis"
-              }
-            });
-          });
-        }
-      });
-
-      const geojson = {
-        type: "FeatureCollection",
-        metadata: {
-          export_date: new Date().toISOString(),
-          total_verifications: allResults.length,
-          total_detections: allResults.filter(r => r.has_solar).length,
-          source: "SuryaVerify - PM Surya Ghar Verification System",
-          export_format: "GeoJSON"
-        },
-        features
-      };
-
-      const geojsonStr = JSON.stringify(geojson, null, 2);
-      const blob = new Blob([geojsonStr], { type: 'application/geo+json' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `verification_results_${new Date().toISOString().split('T')[0]}.geojson`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-      toast.success(`Exported ${allResults.length} results as GeoJSON`);
+    // If multiple results (batch), use ZIP export
+    if (allResults.length > 1) {
+      exportBatchToZip(allResults);
+      toast.success(`Exporting ${allResults.length} results as ZIP`);
     } else {
-      // Export as regular JSON if no polygons
-      const dataStr = JSON.stringify(allResults, null, 2);
-      const blob = new Blob([dataStr], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `verification_results_${new Date().toISOString().split('T')[0]}.json`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-      toast.success("Results exported successfully");
+      // Single result
+      exportResults(allResults);
     }
   };
 
@@ -333,14 +199,14 @@ const Index = () => {
   return (
     <div className="flex flex-col h-screen bg-background">
       <Header />
-      
+
       {!showResults ? (
         /* Screen 1: Coordinate Input (No Map) */
         <div className="flex-1 flex items-center justify-center p-6">
-          <CoordinateInput 
-            onVerify={handleVerify} 
+          <CoordinateInput
+            onVerify={handleVerify}
             onBulkUpload={handleBulkUpload}
-            isLoading={isVerifying} 
+            isLoading={isVerifying}
           />
         </div>
       ) : (
@@ -350,14 +216,14 @@ const Index = () => {
           {!isImageBased && coordinates && (
             <div className="lg:w-[63%] h-[50vh] lg:h-full relative border-b lg:border-b-0 lg:border-r border-border">
               {isVerifying ? (
-                <VerificationProgress 
+                <VerificationProgress
                   currentIndex={verificationProgress.current}
                   totalCount={verificationProgress.total}
                   isImageBased={false}
                 />
               ) : (
-                <MapView 
-                  coordinates={coordinates} 
+                <MapView
+                  coordinates={coordinates}
                   detectionPolygons={result?.detection_polygons}
                 />
               )}
@@ -367,14 +233,14 @@ const Index = () => {
           {/* Right Pane - Results or Progress (for image-based) */}
           <div className={`${isImageBased ? 'w-full' : 'lg:w-[37%]'} h-[50vh] lg:h-full overflow-y-auto bg-background`}>
             {isVerifying && isImageBased ? (
-              <VerificationProgress 
+              <VerificationProgress
                 currentIndex={verificationProgress.current}
                 totalCount={verificationProgress.total}
                 isImageBased={true}
               />
             ) : (
-              <ResultsPanel 
-                result={result} 
+              <ResultsPanel
+                result={result}
                 isLoading={isVerifying}
                 allResults={allResults}
                 currentResultIndex={currentResultIndex}

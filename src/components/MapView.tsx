@@ -5,7 +5,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/t
 import { AlertCircle, RefreshCw, Maximize2, Eye, Info } from "lucide-react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
-import { supabase } from "@/integrations/supabase/client";
+
 import { toast } from "sonner";
 
 interface MapViewProps {
@@ -17,8 +17,8 @@ interface MapViewProps {
   }>;
 }
 
-const MapView = ({ 
-  coordinates, 
+const MapView = ({
+  coordinates,
   detectionPolygons
 }: MapViewProps) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -31,17 +31,17 @@ const MapView = ({
   useEffect(() => {
     const initializeMap = async () => {
       try {
-        const { data, error } = await supabase.functions.invoke('get-mapbox-token');
-        
-        if (error || !data?.token) {
-          console.error('Failed to fetch Mapbox token:', error);
-          toast.error('Could not load map');
+        const token = import.meta.env.VITE_MAPBOX_TOKEN;
+
+        if (!token) {
+          console.error('Mapbox token not configured');
+          toast.error('Could not load map: Token missing');
           setIsLoadingToken(false);
           return;
         }
 
-        mapboxgl.accessToken = data.token;
-        
+        mapboxgl.accessToken = token;
+
         mapRef.current = new mapboxgl.Map({
           container: mapContainerRef.current!,
           style: 'mapbox://styles/mapbox/satellite-streets-v12',
@@ -220,7 +220,7 @@ const MapView = ({
   return (
     <div className="w-full h-full relative bg-muted/20">
       <div ref={mapContainerRef} className="w-full h-full" />
-      
+
       {/* Map Control Buttons */}
       {coordinates && !isLoadingToken && (
         <div className="absolute top-6 right-6 z-10 flex flex-col gap-2 animate-fade-in">

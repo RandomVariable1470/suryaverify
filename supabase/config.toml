@@ -1,7 +1,0 @@
-project_id = "fthqemmggdjnjbplymrk"
-
-[functions.get-mapbox-token]
-verify_jwt = false
-
-[functions.verify-solar]
-verify_jwt = false
