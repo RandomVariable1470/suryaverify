@@ -1,29 +1,24 @@
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { XR, ARButton, useHitTest } from '@react-three/xr';
-import { useState, useRef, useMemo } from 'react';
+import { useState, useRef, useMemo, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { X, Check, RotateCcw } from 'lucide-react';
+import { X, Check, RotateCcw, Save, Sun } from 'lucide-react';
 import { Vector3, BufferGeometry, LineBasicMaterial } from 'three';
 import SolarPanelModel from './SolarPanelModel';
 import { calculateSolarPotential } from '@/utils/solarCalculator';
+import { Sky } from '@react-three/drei';
+import { Slider } from '@/components/ui/slider';
+import { toast } from 'sonner';
 
 const Reticle = ({ updatePos }: { updatePos: (pos: Vector3) => void }) => {
   const ref = useRef<any>(null);
-  // const { camera } = useThree(); // Not used in the new Reticle logic
 
-  // AR Hit Test
   useHitTest((hitMatrix) => {
     if (ref.current) {
       hitMatrix.decompose(ref.current.position, ref.current.quaternion, ref.current.scale);
       updatePos(ref.current.position.clone());
     }
   });
-
-  // Fallback for non-AR (development/testing)
-  // The user's instruction explicitly commented out the fallback logic for now.
-  // For now, I'll assume AR is primary and useHitTest handles positioning.
-  // If a non-AR fallback is needed, it would be implemented here,
-  // potentially using useFrame and raycasting from the camera.
 
   return (
     <mesh ref={ref} rotation={[-Math.PI / 2, 0, 0]}>
@@ -52,7 +47,9 @@ const Polygon = ({ points }: { points: Vector3[] }) => {
 const ARScanner = ({ onComplete }: { onComplete: (results: any) => void }) => {
   const [points, setPoints] = useState<Vector3[]>([]);
   const [status, setStatus] = useState<string>('Tap "Start AR" to begin');
-  const reticlePos = useRef<Vector3>(new Vector3(0, 0, -2)); // Shared mutable object for reticle position
+  const reticlePos = useRef<Vector3>(new Vector3(0, 0, -2));
+  const [sunHour, setSunHour] = useState(12); // Noon
+  const [showSunControls, setShowSunControls] = useState(false);
 
   const handleAddPoint = () => {
     if (reticlePos.current) {
@@ -79,6 +76,21 @@ const ARScanner = ({ onComplete }: { onComplete: (results: any) => void }) => {
     setStatus('Tap "Start AR" to begin');
   };
 
+  const handleSave = () => {
+    if (points.length < 3) return;
+    const results = calculateSolarPotential(points);
+    localStorage.setItem('lastScan', JSON.stringify(results));
+    toast.success("Scan saved locally!");
+  };
+
+  // Calculate sun position based on hour (simple approximation)
+  const sunPosition = useMemo(() => {
+    const angle = ((sunHour - 6) / 12) * Math.PI; // 6am to 6pm -> 0 to PI
+    const x = Math.cos(angle) * 10;
+    const y = Math.sin(angle) * 10;
+    return new Vector3(x, y, -10); // Sun moves east to west
+  }, [sunHour]);
+
   return (
     <div className="relative w-full h-full bg-black">
       <div className="absolute top-4 left-4 right-4 z-50 flex justify-between items-start pointer-events-none">
@@ -95,13 +107,44 @@ const ARScanner = ({ onComplete }: { onComplete: (results: any) => void }) => {
         </Button>
       </div>
 
-      {/* AR Button - This will render the default AR button */}
+      {/* Sun Controls */}
+      {showSunControls && (
+        <div className="absolute top-20 left-4 right-4 z-50 bg-black/60 backdrop-blur p-4 rounded-xl pointer-events-auto">
+          <div className="flex items-center gap-4 text-white">
+            <Sun className="w-5 h-5" />
+            <span className="text-sm w-12">{sunHour}:00</span>
+            <Slider
+              min={6}
+              max={18}
+              step={1}
+              value={[sunHour]}
+              onValueChange={(v) => setSunHour(v[0])}
+              className="flex-1"
+            />
+          </div>
+        </div>
+      )}
+
+      {/* AR Button */}
       <ARButton
-        className="absolute bottom-24 left-1/2 transform -translate-x-1/2 bg-white text-black px-6 py-3 rounded-full font-bold shadow-lg hover:bg-gray-100 transition-colors z-50"
-        sessionInit={{ requiredFeatures: ['hit-test'] }}
+        className="absolute bottom-32 left-1/2 transform -translate-x-1/2 bg-white text-black px-6 py-3 rounded-full font-bold shadow-lg hover:bg-gray-100 transition-colors z-50"
+        sessionInit={{
+          requiredFeatures: ['hit-test'],
+          optionalFeatures: ['dom-overlay'],
+          domOverlay: { root: document.body }
+        }}
       />
 
       <div className="absolute bottom-10 left-0 right-0 z-50 flex justify-center gap-4 pointer-events-none">
+        <Button
+          onClick={() => setShowSunControls(!showSunControls)}
+          variant="secondary"
+          size="icon"
+          className="pointer-events-auto rounded-full shadow-lg"
+        >
+          <Sun className="w-4 h-4" />
+        </Button>
+
         <Button
           onClick={handleAddPoint}
           className="pointer-events-auto bg-primary text-primary-foreground rounded-full font-bold shadow-lg"
@@ -110,12 +153,22 @@ const ARScanner = ({ onComplete }: { onComplete: (results: any) => void }) => {
         </Button>
 
         {points.length >= 3 && (
-          <Button
-            onClick={handleFinish}
-            className="pointer-events-auto bg-green-600 hover:bg-green-700 text-white rounded-full font-bold shadow-lg"
-          >
-            <Check className="w-4 h-4 mr-2" /> Finish
-          </Button>
+          <>
+            <Button
+              onClick={handleFinish}
+              className="pointer-events-auto bg-green-600 hover:bg-green-700 text-white rounded-full font-bold shadow-lg"
+            >
+              <Check className="w-4 h-4 mr-2" /> Finish
+            </Button>
+            <Button
+              onClick={handleSave}
+              variant="outline"
+              size="icon"
+              className="pointer-events-auto rounded-full shadow-lg bg-white/10 text-white border-white/20"
+            >
+              <Save className="w-4 h-4" />
+            </Button>
+          </>
         )}
 
         {points.length > 0 && (
@@ -132,8 +185,9 @@ const ARScanner = ({ onComplete }: { onComplete: (results: any) => void }) => {
 
       <Canvas>
         <XR>
-          <ambientLight intensity={1} />
-          <pointLight position={[10, 10, 10]} />
+          <Sky sunPosition={sunPosition} />
+          <ambientLight intensity={0.5} />
+          <directionalLight position={sunPosition} intensity={1} castShadow />
 
           <Reticle updatePos={(pos) => reticlePos.current.copy(pos)} />
           <Polygon points={points} />
