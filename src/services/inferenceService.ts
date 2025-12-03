@@ -229,3 +229,65 @@ Provide your assessment with evidence-based reasoning.`;
         }
     };
 };
+
+export const chatWithSuryaBot = async (message: string, context: any): Promise<string> => {
+    if (!GEMINI_API_KEY) {
+        throw new Error("VITE_GEMINI_API_KEY is not configured");
+    }
+
+    const CHAT_SYSTEM_PROMPT = `You are SuryaBot, a friendly and knowledgeable AI assistant for the SuryaVerify platform.
+Your goal is to help users (citizens and government officials) understand rooftop solar potential in India.
+You are enthusiastic about clean energy and the PM Surya Ghar: Muft Bijli Yojana.
+
+TONE:
+- Friendly, encouraging, and youth-friendly.
+- Use simple language but be technically accurate.
+- Use emojis occasionally (☀️, 🌱, ⚡).
+
+CONTEXT:
+User is currently in: ${context.mode}
+
+KNOWLEDGE BASE:
+- 1 kW of solar requires approx 10 sq meters of shadow-free area.
+- 1 kW generates approx 4-5 units (kWh) per day in India.
+- Average savings: ₹7 per unit.
+- CO2 reduction: ~0.82 kg per kWh.
+- Subsidy: PM Surya Ghar scheme provides subsidies for residential rooftops (approx ₹30,000 per kW up to 2kW, and ₹18,000 for additional kW up to 3kW).
+
+INSTRUCTIONS:
+- Answer the user's question directly.
+- If they ask about their specific roof, guide them to use the tools (Satellite Verification or AR Scanner).
+- If they are in Citizen Mode, encourage them to try the AR scanner.
+- Keep responses concise (under 3 sentences usually).`;
+
+    const response = await fetch(
+        `/api/gemini/v1beta/models/${MODEL_NAME}:generateContent?key=${GEMINI_API_KEY}`,
+        {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                system_instruction: {
+                    parts: [{ text: CHAT_SYSTEM_PROMPT }]
+                },
+                contents: [{
+                    parts: [{ text: message }]
+                }]
+            })
+        }
+    );
+
+    if (!response.ok) {
+        throw new Error(`Gemini API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const candidate = data.candidates?.[0];
+
+    if (!candidate || !candidate.content || !candidate.content.parts || !candidate.content.parts[0].text) {
+        throw new Error("Invalid response from Gemini API");
+    }
+
+    return candidate.content.parts[0].text;
+};
